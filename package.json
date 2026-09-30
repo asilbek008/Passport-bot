@@ -1,0 +1,22 @@
+{
+  "name": "umra-passport-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Umra safari uchun hujjat qabul qiluvchi Telegram bot",
+  "engines": { "node": ">=22.6" },
+  "scripts": {
+    "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts",
+    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "write-excel-file": "^2.3.2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,389 @@
+/**
+ * Suhbat mantig'i. Bog'liqliklar (Telegram, baza, rasm o'qigich) tashqaridan
+ * beriladi, shuning uchun bu funksiyani testda ham ishga tushirish mumkin.
+ *
+ * Qoidalar:
+ *  - bot OCHIQ EMAS: `OPERATORS` da bo'lmagan chat hech narsa qilolmaydi;
+ *  - faqat shaxsiy suhbat: hujjat guruhga yuborilmaydi;
+ *  - rasm hech qachon diskka yozilmaydi va saqlanmaydi;
+ *  - tekshiruvdan o'tmagan ma'lumot saqlanmaydi;
+ *  - jurnalga ism, pasport raqami va xato matni yozilmaydi.
+ */
+
+import { t, esc } from "./text.ts";
+import { config, isOperator } from "./config.ts";
+import { monthsUntilExpiry, failedFields } from "./mrz.ts";
+import { splitMessage } from "./batch.ts";
+import { buildWorkbook, workbookName, workbookCaption, passportState } from "./excel.ts";
+import type { Store } from "./store.ts";
+import type { Telegram, TgUpdate } from "./telegram.ts";
+import type { readDocument } from "./vision.ts";
+
+export type Deps = {
+  tg: Telegram;
+  store: Store;
+  read: typeof readDocument;
+  /** Rasmni navbatga qo'yish — `index.ts` dagi `Batcher` beradi */
+  enqueue: (chatId: number, fileId: string) => void;
+  now?: () => Date;
+};
+
+export const COMMANDS = [
+  { command: "guruh", description: "Joriy safar guruhini belgilash" },
+  { command: "royxat", description: "Guruhdagi kishilar" },
+  { command: "excel", description: "Excel jadvalni olish" },
+  { command: "ogohlik", description: "Pasporti tez tugaydiganlar" },
+  { command: "yordam", description: "Buyruqlar ro'yxati" },
+];
+
+/** Telegram xabar chegarasini hisobga olib yuboradi. */
+async function reply(tg: Telegram, chatId: number, text: string): Promise<void> {
+  for (const part of splitMessage(text)) {
+    await tg.sendMessage(chatId, part);
+  }
+}
+
+export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> {
+  const msg = update.message;
+  if (!msg) return;
+
+  const chatId = msg.chat.id;
+
+  // Guruh/kanal — hujjat u yerda ishlanmaydi
+  if (msg.chat.type !== "private") {
+    if ((msg.text ?? "").startsWith("/")) {
+      await deps.tg.sendMessage(chatId, t.groupsNotAllowed);
+    }
+    return;
+  }
+
+  // Oq ro'yxat: birinchi va eng muhim tekshiruv
+  if (!isOperator(chatId)) {
+    await deps.tg.sendMessage(chatId, t.notOperator);
+    return;
+  }
+
+  const raw = (msg.text ?? msg.caption ?? "").trim();
+
+  if (raw.startsWith("/")) {
+    const [head, ...rest] = raw.split(/\s+/);
+    const command = head.slice(1).split("@")[0].toLowerCase();
+    await handleCommand(command, rest.join(" ").trim(), chatId, deps);
+    // Rasm izohida buyruq bo'lsa, rasm ham navbatga tushishi kerak
+    if (!hasPhoto(msg)) return;
+  }
+
+  if (hasPhoto(msg)) {
+    deps.enqueue(chatId, photoFileId(msg));
+    return;
+  }
+
+  if (!raw.startsWith("/")) {
+    await deps.tg.sendMessage(chatId, t.sendPhoto);
+  }
+}
+
+function hasPhoto(msg: NonNullable<TgUpdate["message"]>): boolean {
+  return Boolean(
+    msg.photo?.length || msg.document?.mime_type?.startsWith("image/"),
+  );
+}
+
+/** Telegram bir rasmni bir necha o'lchamda beradi — eng kattasi kerak. */
+function photoFileId(msg: NonNullable<TgUpdate["message"]>): string {
+  if (msg.photo?.length) return msg.photo[msg.photo.length - 1].file_id;
+  return msg.document!.file_id;
+}
+
+// --- Buyruqlar ---
+
+async function handleCommand(
+  command: string,
+  argument: string,
+  chatId: number,
+  deps: Deps,
+): Promise<void> {
+  const { tg, store } = deps;
+  const now = deps.now?.() ?? new Date();
+  const group = store.currentGroup(chatId);
+
+  switch (command) {
+    case "start":
+      await reply(tg, chatId, t.start(group));
+      return;
+
+    case "yordam":
+    case "help":
+      await reply(tg, chatId, t.help);
+      return;
+
+    case "guruh": {
+      if (!argument) {
+        await tg.sendMessage(chatId, t.groupCurrent(group, store.count(group)));
+        return;
+      }
+      // "-" yoki "yoq" — guruhni olib tashlash
+      if (argument === "-" || argument.toLowerCase() === "yoq") {
+        store.setCurrentGroup(chatId, "");
+        await tg.sendMessage(chatId, t.groupCleared);
+        return;
+      }
+      const label = argument.slice(0, 60);
+      store.setCurrentGroup(chatId, label);
+      await tg.sendMessage(chatId, t.groupSet(label));
+      return;
+    }
+
+    case "guruhlar":
+      await reply(tg, chatId, t.groupList(store.groups()));
+      return;
+
+    case "royxat": {
+      const rows = store.all(group || undefined);
+      if (rows.length === 0) {
+        await tg.sendMessage(chatId, t.emptyList(group));
+        return;
+      }
+      const lines = rows.map(
+        (p, i) =>
+          `${i + 1}. ${esc(p.surname)} ${esc(p.given_names)} — \`${p.doc_number}\`` +
+          ` · ${p.expiry_date}`,
+      );
+      await reply(tg, chatId, t.listHeader(group, rows.length) + lines.join("\n"));
+      return;
+    }
+
+    case "excel": {
+      const wantAll = /^(hammasi|all|barcha)$/i.test(argument);
+      const scope = wantAll ? undefined : group || undefined;
+      const rows = store.all(scope);
+      if (rows.length === 0) {
+        await tg.sendMessage(chatId, t.emptyList(wantAll ? "" : group));
+        return;
+      }
+      const bytes = await buildWorkbook(rows, now);
+      await tg.sendDocument(
+        chatId,
+        workbookName(now, wantAll ? undefined : group || undefined),
+        bytes,
+        workbookCaption(rows, now),
+      );
+      store.logExport(chatId, rows.length);
+      return;
+    }
+
+    case "ogohlik": {
+      const risky = store
+        .all(group || undefined)
+        .map((p) => ({ p, state: passportState(p.expiry_date, now) }))
+        .filter(({ state }) => state !== "ok");
+      if (risky.length === 0) {
+        await tg.sendMessage(chatId, t.noWarnings);
+        return;
+      }
+      const lines = risky.map(({ p, state }) => {
+        const icon = state === "expired" ? "🔴" : state === "soon" ? "🟡" : "⚪";
+        return `${icon} ${esc(p.surname)} ${esc(p.given_names)} — ${p.expiry_date}`;
+      });
+      await reply(
+        tg,
+        chatId,
+        t.warningsHeader(risky.length) + lines.join("\n"),
+      );
+      return;
+    }
+
+    case "ochir": {
+      if (!argument) {
+        await tg.sendMessage(chatId, t.needDocNumber);
+        return;
+      }
+      const doc = argument.toUpperCase().replace(/\s+/g, "");
+      const removed = store.deleteByDocNumber(doc);
+      await tg.sendMessage(chatId, removed > 0 ? t.deleted(doc) : t.notFound(doc));
+      return;
+    }
+
+    case "guruhni_ochir": {
+      if (!argument) {
+        await tg.sendMessage(chatId, t.needGroupName);
+        return;
+      }
+      const removed = store.deleteGroup(argument);
+      await tg.sendMessage(chatId, t.groupDeleted(argument, removed));
+      return;
+    }
+
+    case "tozalash":
+      await tg.sendMessage(chatId, t.purged(store.purge()));
+      return;
+
+    default:
+      await reply(tg, chatId, t.help);
+  }
+}
+
+// --- Rasmlarni to'plam bo'lib o'qish ---
+
+/**
+ * Bitta to'plamni o'qiydi va bitta hisobot yuboradi.
+ *
+ * Rasmlar KETMA-KET o'qiladi: bir vaqtda o'nlab so'rov yuborilsa API
+ * cheklovga urilardi va xato bo'lgan rasmni topish qiyinlashardi.
+ */
+export async function processBatch(
+  chatId: number,
+  fileIds: string[],
+  deps: Deps,
+): Promise<void> {
+  const { tg, store, read } = deps;
+  const now = deps.now?.() ?? new Date();
+  const group = store.currentGroup(chatId);
+
+  if (!store.countAttempt(chatId, fileIds.length)) {
+    await tg.sendMessage(chatId, t.dailyLimit);
+    return;
+  }
+
+  const progress = await tg.sendMessage(chatId, t.photoQueued(fileIds.length));
+
+  const ok: string[] = [];
+  const failed: string[] = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < fileIds.length; i++) {
+    // Progressni har 3 rasmda yangilaymiz — har birida yangilash
+    // Telegram chekloviga urilardi
+    if (fileIds.length > 3 && i > 0 && i % 3 === 0) {
+      await tg.editMessage(
+        chatId,
+        progress.message_id,
+        t.progress(i, fileIds.length),
+      );
+    }
+
+    const outcome = await readOne(fileIds[i], deps, now);
+
+    if (outcome.kind === "failed") {
+      failed.push(t.failLine(i + 1, outcome.why));
+      continue;
+    }
+
+    const { mrz, extra } = outcome;
+    const result = store.save({
+      added_by: chatId,
+      group_label: group,
+      surname: mrz.surname,
+      given_names: mrz.givenNames,
+      doc_code: mrz.documentCode,
+      doc_number: mrz.documentNumber,
+      nationality: mrz.nationality,
+      birth_date: mrz.birthDate,
+      sex: mrz.sex,
+      expiry_date: mrz.expiryDate,
+      personal_number: mrz.personalNumber,
+      issue_date: extra.issueDate,
+      place_of_birth: extra.placeOfBirth,
+      authority: extra.authority,
+      mrz_format: mrz.format,
+    });
+
+    ok.push(
+      t.okLine({
+        surname: mrz.surname,
+        givenNames: mrz.givenNames,
+        documentNumber: mrz.documentNumber,
+        expiryDate: mrz.expiryDate,
+        fresh: result === "inserted",
+      }),
+    );
+
+    // Umra talabi: pasport kamida 6 oy amal qilishi kerak
+    const left = monthsUntilExpiry(mrz, now);
+    if (left !== null) {
+      if (left < 0) {
+        warnings.push(
+          `🔴 ${esc(mrz.surname)} ${esc(mrz.givenNames)} — pasport muddati tugagan`,
+        );
+      } else if (left < config.minPassportMonths) {
+        warnings.push(
+          t.warnSoon(
+            { surname: mrz.surname, givenNames: mrz.givenNames },
+            Math.floor(left),
+          ),
+        );
+      }
+    }
+  }
+
+  const report = t.batchReport({
+    ok,
+    failed,
+    warnings,
+    group,
+    total: fileIds.length,
+  });
+
+  const parts = splitMessage(report);
+  // Birinchi bo'lakni progress xabarining o'rniga yozamiz — suhbat toza qoladi
+  await tg.editMessage(chatId, progress.message_id, parts[0]);
+  for (const part of parts.slice(1)) {
+    await tg.sendMessage(chatId, part);
+  }
+}
+
+type Outcome =
+  | {
+      kind: "ok";
+      mrz: NonNullable<Awaited<ReturnType<typeof readDocument>> & { ok: true }>["mrz"];
+      extra: {
+        issueDate: string | null;
+        placeOfBirth: string | null;
+        authority: string | null;
+      };
+    }
+  | { kind: "failed"; why: string };
+
+/** Bitta rasmni yuklab, o'qib, natijasini qaytaradi. Saqlamaydi. */
+async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> {
+  let image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
+  try {
+    image = await deps.tg.download(fileId);
+  } catch {
+    return { kind: "failed", why: "faylni yuklab bo'lmadi" };
+  }
+
+  try {
+    const result = await deps.read(image, now);
+
+    if (result.ok) {
+      return {
+        kind: "ok",
+        mrz: result.mrz,
+        extra: {
+          issueDate: result.issueDate,
+          placeOfBirth: result.placeOfBirth,
+          authority: result.authority,
+        },
+      };
+    }
+
+    switch (result.reason) {
+      case "checks_failed":
+        return { kind: "failed", why: t.reasonChecks(failedFields(result.mrz)) };
+      case "not_a_document":
+        return { kind: "failed", why: t.reasonNotDocument };
+      case "refused":
+        return { kind: "failed", why: t.reasonRefused };
+      default:
+        return { kind: "failed", why: t.reasonUnreadable };
+    }
+  } catch (err) {
+    // Xato MATNI jurnalga yozilmaydi — ichida hujjat ma'lumoti bo'lishi mumkin
+    console.error(`[read] xato turi: ${err instanceof Error ? err.name : "noma'lum"}`);
+    return { kind: "failed", why: t.reasonTechnical };
+  } finally {
+    // Rasm xotirada ham qolmasin
+    image.bytes.fill(0);
+  }
+}
