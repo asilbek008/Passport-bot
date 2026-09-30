@@ -146,14 +146,28 @@ async function main() {
           "",
         ].join("\n"),
       );
-    } else if (err instanceof TelegramError && err.code === 401) {
+    } else if (
+      err instanceof TelegramError &&
+      (err.code === 401 || err.code === 404)
+    ) {
+      // 404 = "bunday bot yo'q" -> token xato/to'liq emas
+      // 401 = token bekor qilingan
       console.error(
         [
           "",
-          "BOT_TOKEN qabul qilinmadi (401).",
+          err.code === 404
+            ? "BOT_TOKEN xato: Telegram bunday botni topmadi (404)."
+            : "BOT_TOKEN bekor qilingan (401).",
           "",
-          "@BotFather ga kirib /mybots → botingiz → API Token dan tokenni qayta",
-          "ko'chirib, .env fayliga qo'yasiz. Tokenni tirnoqqa olish shart emas.",
+          "Tokenni qayta ko'chirib qo'yish kerak:",
+          "  1. Telegramda @BotFather ni ochasiz",
+          "  2. /mybots → botingizni tanlaysiz → API Token",
+          "  3. Tokenni BOSHIDAN OXIRIGACHA belgilab ko'chirasiz",
+          "  4. .env faylida:  BOT_TOKEN=8123456789:AAH-xxxxxxxxxxxxx",
+          "",
+          "Diqqat: tirnoq qo'yilmaydi, bo'shliq qolmaydi, bir qatorda turadi.",
+          "",
+          "Batafsil tekshirish:  npm run tekshir",
           "",
         ].join("\n"),
       );

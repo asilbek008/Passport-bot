@@ -138,3 +138,46 @@ test("setValue va parseEnv birga to'g'ri ishlaydi", async () => {
   assert.equal(parsed.BOT_TOKEN, token);
   assert.equal(parsed.ANTHROPIC_API_KEY, key);
 });
+
+// --- Tashxisdagi niqob (sir ekranga chiqmasligi kerak) ---
+
+test("mask sirni yashiradi va takrorlamaydi", async () => {
+  const { mask } = await import("../scripts/tekshir.ts");
+
+  // Uzun qiymat: boshi va oxiri ko'rinadi, o'rtasi yashiriladi
+  const key = "sk-ant-api03-SECRETSECRETSECRET-abcd";
+  const masked = mask(key, 11, 4);
+  assert.equal(masked.length, key.length, "uzunligi o'zgarmasligi kerak");
+  assert.ok(masked.startsWith("sk-ant-api"), "boshi ko'rinadi");
+  assert.ok(masked.endsWith("abcd"), "oxiri ko'rinadi");
+  assert.ok(!masked.includes("SECRET"), "o'rtasi yashirilishi kerak");
+
+  // Qisqa qiymat: hammasi yashiriladi (avval takrorlanib ko'rinardi)
+  assert.equal(mask("oops", 11, 4), "••••");
+  assert.equal(mask("", 11, 4), "");
+  assert.equal(mask("abc", 0, 4), "•••");
+});
+
+test("checkTokenShape token muammolarini topadi", async () => {
+  const { checkTokenShape } = await import("../scripts/tekshir.ts");
+
+  // To'g'ri token
+  assert.deepEqual(
+    checkTokenShape("8123456789:AAH-abcDEF_ghi123JKL456mno789PQRst"),
+    [],
+  );
+  // Bot nomi ko'chirilgan
+  assert.ok(checkTokenShape("@mening_botim").includes("ikki nuqta yo'q"));
+  // Yarim ko'chirilgan
+  assert.ok(checkTokenShape("8123456789:AAH-abc").includes("juda qisqa"));
+  // Tirnoq va bo'shliq
+  const messy = checkTokenShape('"8123456789:AAH abc"');
+  assert.ok(messy.includes("tirnoq"));
+  assert.ok(messy.includes("bo'shliq"));
+  // Raqam o'rniga matn
+  assert.ok(
+    checkTokenShape("botim:AAH-abcDEF_ghi123JKL456mno789PQRst").includes(
+      "bot raqami xato",
+    ),
+  );
+});

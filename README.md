@@ -209,12 +209,13 @@ src/
   index.ts      Ishga tushirish, uzun so'rov tsikli
 scripts/
   setup.ts      `npm run setup` — .env ni savol-javob bilan to'ldiradi
+  tekshir.ts    `npm run tekshir` — sozlamalar tashxisi
 ```
 
 Tekshirish:
 
 ```bash
-npm test         # 77 test
+npm test         # 79 test
 npm run typecheck
 ```
 
@@ -234,6 +235,27 @@ npm run typecheck
 
 ---
 
+## Nimadir ishlamasa — birinchi navbatda
+
+```bash
+npm run tekshir
+```
+
+Bu buyruq hammasini tekshiradi va nima xato ekanini aytadi: `.env` topildimi,
+token shakli to'g'rimi, Telegram javob beradimi. **Tokenni ekranga chiqarmaydi**
+(faqat oxirgi 4 belgi), shuning uchun natijani bemalol boshqaga ko'rsatasiz.
+
+Namuna:
+
+```
+BOT_TOKEN
+  Uzunligi: 13 belgi
+  Ko'rinishi: •••••••••otim
+  ✗ ichida ':' yo'q — bu bot tokeni emas
+    → Token shunday: 8123456789:AAH-xxxxxxxxxxxxxxxxxxxxx
+    → Bot NOMINI (@...bot) ko'chirib qo'ymadingizmi?
+```
+
 ## Tez-tez uchraydigan holatlar
 
 **«Bu bot tashkilotning ichki vositasi»** — sizda hali ruxsat yo'q. Terminalda
@@ -244,8 +266,18 @@ bilan to'xtatib qayta ishga tushirsangiz yangi kod chiqadi.
 faervol. Ish joyidagi tarmoq Telegramni to'sayotgan bo'lishi mumkin; mobil
 internet yoki VPN bilan sinab ko'ring.
 
-**«BOT_TOKEN qabul qilinmadi (401)»** — token xato ko'chirilgan. @BotFather →
-`/mybots` → botingiz → *API Token* dan qayta ko'chiring.
+**«Telegram getMe: Not Found»** yoki **«BOT_TOKEN xato (404)»** — Telegram bunday
+botni topmadi, ya'ni token yaroqsiz. Eng ko'p uchraydigan sabablar:
+
+- token yarim ko'chirilgan (boshidan oxirigacha belgilang);
+- bot **nomi** (`@...bot`) ko'chirilgan, token o'rniga;
+- tirnoq qo'shilgan: `BOT_TOKEN="123:abc"` — tirnoq **kerak emas**;
+- token oldin `/revoke` qilingan — @BotFather dan yangisini oling.
+
+`npm run tekshir` shularning qaysi biri ekanini aytib beradi.
+
+**«BOT_TOKEN bekor qilingan (401)»** — token o'chirilgan. @BotFather →
+`/mybots` → botingiz → *API Token* dan yangisini oling.
 
 **Ko'p rasm «o'qilmadi» bo'lyapti** — MRZ qatorlari xira. Rasmni yorug'roq
 joyda, pasportni tekis qo'yib oling. Skanerdan o'tkazilgan nusxa eng yaxshi
