@@ -70,6 +70,21 @@ async function main(): Promise<number> {
     ok(`${process.versions.node}`);
   }
 
+  // --- Bog'liqliklar ---
+  // Bu skript tashqi kutubxonaga bog'liq emas, shuning uchun `npm install`
+  // qilinmagan papkada ham ishlaydi — va buni aytib berishi kerak.
+
+  say("\nBog'liqliklar");
+  if (!existsSync("node_modules")) {
+    problem("node_modules yo'q — kutubxonalar o'rnatilmagan");
+    hint("npm install");
+  } else if (!existsSync("node_modules/@anthropic-ai/sdk")) {
+    problem("kutubxonalar to'liq o'rnatilmagan");
+    hint("npm install");
+  } else {
+    ok("o'rnatilgan");
+  }
+
   // --- .env fayli ---
 
   say("\n.env fayli");
