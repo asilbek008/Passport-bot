@@ -22,6 +22,49 @@ export const t = {
     "Agar Umra safari haqida savolingiz bo'lsa, tashkilotga to'g'ridan-to'g'ri murojaat qiling.",
   ].join("\n"),
 
+  /** Birinchi xodim kod bilan ro'yxatga tushdi. */
+  claimed: (chatId: number) =>
+    [
+      "✅ Ruxsat berildi — endi botdan foydalanishingiz mumkin.",
+      "",
+      `Sizning chat raqamingiz: \`${chatId}\``,
+      "",
+      "Bu ruxsat bazada saqlandi, shuning uchun botni qayta ishga",
+      "tushirsangiz ham qoladi.",
+      "",
+      "Boshlash: /start",
+    ].join("\n"),
+
+  /** Hamkasbni qo'shish uchun kod. */
+  inviteCode: (code: string, minutes: number) =>
+    [
+      "*Yangi xodim uchun kod:*",
+      "",
+      `\`${code}\``,
+      "",
+      `Hamkasbingiz botni ochib shu kodni yuborsa, ruxsat oladi.`,
+      `Kod ${minutes} daqiqa amal qiladi va faqat bir marta ishlatiladi.`,
+    ].join("\n"),
+
+  operatorList: (fromDb: number[], fromEnv: string[], me: number) => {
+    const lines: string[] = ["*Ruxsat berilgan xodimlar:*", ""];
+    for (const id of fromDb) {
+      lines.push(`• \`${id}\`${id === me ? " ← siz" : ""}`);
+    }
+    for (const id of fromEnv) {
+      lines.push(`• \`${id}\` _(.env)_${Number(id) === me ? " ← siz" : ""}`);
+    }
+    lines.push("", "Qo'shish: /kod — yangi xodimga beriladigan kod");
+    lines.push("O'chirish: `/xodim_ochir <raqam>`");
+    return lines.join("\n");
+  },
+
+  operatorRemoved: (chatId: number) => `\`${chatId}\` ruxsatdan chiqarildi.`,
+  operatorNotFound: (chatId: number) =>
+    `\`${chatId}\` bazada yo'q. _(.env dagi xodimni faqat .env dan o'chirasiz.)_`,
+  cannotRemoveSelf: "O'zingizni ruxsatdan chiqara olmaysiz.",
+  needChatId: "Chat raqamini yozing: `/xodim_ochir 123456789`",
+
   start: (group: string) =>
     [
       "Assalomu alaykum. Bu bot pasport rasmlaridan viza uchun kerakli",
@@ -55,6 +98,11 @@ export const t = {
     "`/ochir <pasport raqami>` — bitta yozuvni o'chirish",
     "`/guruhni_ochir <nom>` — butun guruhni o'chirish",
     "`/tozalash` — saqlash muddati o'tgan yozuvlarni o'chirish",
+    "",
+    "*Xodimlar:*",
+    "`/kod` — yangi xodim uchun bir martalik kod",
+    "`/xodimlar` — ruxsat berilganlar ro'yxati",
+    "`/xodim_ochir <raqam>` — ruxsatni olib tashlash",
     "",
     "Pasport rasmini yuborsangiz — o'qiladi va joriy guruhga qo'shiladi.",
   ].join("\n"),

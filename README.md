@@ -43,39 +43,56 @@ Qo'llab-quvvatlanadigan formatlar:
 
 ---
 
-## O'rnatish
+## O'rnatish — uch buyruq
 
 Node.js **22.6 yoki yuqori** kerak (`node:sqlite` va TypeScript'ni to'g'ridan-to'g'ri
-ishga tushirish uchun).
+ishga tushirish uchun). [nodejs.org](https://nodejs.org) dan LTS nusxasini oling.
 
 ```bash
-npm install
-cp .env.example .env
+npm install     # bog'liqliklarni o'rnatadi
+npm run setup   # ikkita kalitni so'raydi va .env ni o'zi to'ldiradi
+npm start       # ishga tushadi
 ```
 
-`.env` ni to'ldiring:
+`npm run setup` sizdan faqat **ikki narsa** so'raydi — ularni men olib bera
+olmayman, ikkisi ham sizning hisobingizga tegishli:
 
-1. **`BOT_TOKEN`** — Telegramda [@BotFather](https://t.me/BotFather) ga yozing:
-   `/newbot` → nom → token beradi.
-2. **`ANTHROPIC_API_KEY`** — [console.anthropic.com](https://console.anthropic.com)
-   → API Keys.
-3. **`OPERATORS`** — hozircha bo'sh qoldiring.
+| Nima | Qayerdan |
+|---|---|
+| **Bot tokeni** | Telegramda [@BotFather](https://t.me/BotFather) → `/newbot` → nom bering → token beradi |
+| **Anthropic API kaliti** | [console.anthropic.com](https://console.anthropic.com) → API Keys → Create Key |
 
-Botni ishga tushiring:
+Qolgan sozlamalarning hammasi standart qiymati bilan ishlaydi — tegmasangiz ham bo'ladi.
 
-```bash
-npm start
-```
+### Birinchi ishga tushirish: ruxsat olish
 
-Endi botga Telegramda `/start` yozing. Terminalda shunday chiqadi:
+`npm start` dan keyin terminalda shunday chiqadi:
 
 ```
-[xabar] chat 123456789 — ro'yxatda YO'Q
+──────────────────────────────────────────────────────────
+  BIRINCHI ISHGA TUSHIRISH
+
+  1. Telegramda botni oching:  https://t.me/sizning_botingiz
+  2. Unga quyidagi kodni yuboring:
+
+        K7M2QP
+
+  Shundan keyin botdan foydalanishingiz mumkin.
+──────────────────────────────────────────────────────────
 ```
 
-Shu raqamni `.env` dagi `OPERATORS` ga qo'shing (bir nechta xodim bo'lsa
-vergul bilan: `OPERATORS=123456789,987654321`) va botni qaytadan ishga
-tushiring. Tayyor.
+Kodni botga yuborsangiz — tamom, ruxsat oldingiz. Chat raqamini qo'lda
+topish, `.env` ni tahrirlash va botni qayta ishga tushirish **kerak emas**:
+ruxsat bazada saqlanadi.
+
+Kod faqat terminalda ko'rinadi, ya'ni uni serverga/kompyuterga kirish huquqi
+bor odam — ya'ni siz — ko'radi. Shuning uchun bu xavfsiz.
+
+### Hamkasbni qo'shish
+
+Botda `/kod` yozasiz — bir martalik kod beradi. Hamkasbingiz botni ochib shu
+kodni yuborsa, u ham ruxsat oladi. `/xodimlar` — ro'yxat, `/xodim_ochir <raqam>`
+— ruxsatni olib tashlash.
 
 ---
 
@@ -122,6 +139,9 @@ O'qilmadi (2) — qaytadan suratga oling:
 | `/ochir AB1234567` | Bitta yozuvni o'chiradi |
 | `/guruhni_ochir Umra mart` | Butun guruhni o'chiradi |
 | `/tozalash` | Saqlash muddati o'tganlarni o'chiradi |
+| `/kod` | Yangi xodim uchun bir martalik kod |
+| `/xodimlar` | Ruxsat berilganlar ro'yxati |
+| `/xodim_ochir 123456789` | Ruxsatni olib tashlaydi |
 
 ### Excel faylda nima bo'ladi
 
@@ -182,15 +202,19 @@ src/
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
   bot.ts        Suhbat mantig'i (bog'liqliklar tashqaridan — testdan o'tadi)
   telegram.ts   Bot API (faqat fetch, SDK'siz)
+  invites.ts    Xodimni qo'shish uchun bir martalik kodlar
+  env.ts        .env faylini o'qish (dotenv paketisiz)
   text.ts       Barcha o'zbekcha matnlar
   config.ts     Muhit o'zgaruvchilari
   index.ts      Ishga tushirish, uzun so'rov tsikli
+scripts/
+  setup.ts      `npm run setup` — .env ni savol-javob bilan to'ldiradi
 ```
 
 Tekshirish:
 
 ```bash
-npm test         # 44 test
+npm test         # 77 test
 npm run typecheck
 ```
 
@@ -212,8 +236,16 @@ npm run typecheck
 
 ## Tez-tez uchraydigan holatlar
 
-**«Bu bot tashkilotning ichki vositasi»** — chat id `OPERATORS` da yo'q.
-Yuqoridagi o'rnatish qadamiga qayting.
+**«Bu bot tashkilotning ichki vositasi»** — sizda hali ruxsat yo'q. Terminalda
+chiqqan kodni botga yuboring. Kod eskirgan bo'lsa (60 daqiqa), botni `Ctrl+C`
+bilan to'xtatib qayta ishga tushirsangiz yangi kod chiqadi.
+
+**«Telegramga ulanib bo'lmadi — tarmoq muammosi»** — token emas, internet yoki
+faervol. Ish joyidagi tarmoq Telegramni to'sayotgan bo'lishi mumkin; mobil
+internet yoki VPN bilan sinab ko'ring.
+
+**«BOT_TOKEN qabul qilinmadi (401)»** — token xato ko'chirilgan. @BotFather →
+`/mybots` → botingiz → *API Token* dan qayta ko'chiring.
 
 **Ko'p rasm «o'qilmadi» bo'lyapti** — MRZ qatorlari xira. Rasmni yorug'roq
 joyda, pasportni tekis qo'yib oling. Skanerdan o'tkazilgan nusxa eng yaxshi

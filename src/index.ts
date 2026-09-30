@@ -4,15 +4,51 @@
  * yoki arzon serverda `npm start` bilan turadi.
  */
 
-import { config } from "./config.ts";
-import { Telegram } from "./telegram.ts";
+// `.env` BIRINCHI yuklanadi — config undan keyin o'qiydi
+import { loadEnv } from "./env.ts";
+loadEnv();
+
+import { config, isOperator } from "./config.ts";
+import { Telegram, TelegramError } from "./telegram.ts";
 import { Store } from "./store.ts";
 import { readDocument } from "./vision.ts";
 import { Batcher } from "./batch.ts";
+import { Invites } from "./invites.ts";
 import { handleUpdate, processBatch, COMMANDS, type Deps } from "./bot.ts";
+
+const CODE_TTL_MINUTES = 60;
+
+/** Sozlamalar to'liqmi — to'liq bo'lmasa o'zbekcha tushuntirib to'xtaydi. */
+function checkSettings(): string[] {
+  const problems: string[] = [];
+  if (!process.env.BOT_TOKEN) {
+    problems.push(
+      "BOT_TOKEN yo'q.\n" +
+        "   Telegramda @BotFather ga kiring → /newbot → bot nomini yozing →\n" +
+        "   u sizga token beradi. Uni .env fayliga BOT_TOKEN= dan keyin qo'yasiz.",
+    );
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    problems.push(
+      "ANTHROPIC_API_KEY yo'q.\n" +
+        "   console.anthropic.com → API Keys → Create Key.\n" +
+        "   Uni .env fayliga ANTHROPIC_API_KEY= dan keyin qo'yasiz.",
+    );
+  }
+  return problems;
+}
+
+const problems = checkSettings();
+if (problems.length > 0) {
+  console.error("\nBot ishga tushmadi — sozlamalar to'liq emas:\n");
+  for (const p of problems) console.error(` • ${p}\n`);
+  console.error("Namuna fayl: .env.example (nusxasini .env deb saqlang)\n");
+  process.exit(1);
+}
 
 const tg = new Telegram(config.botToken);
 const store = new Store();
+const invites = new Invites(CODE_TTL_MINUTES);
 
 // To'plam: rasmlar yig'iladi, keyin birga o'qiladi.
 // `deps` ni ichida ishlatgani uchun pastda e'lon qilinadi.
@@ -25,6 +61,13 @@ const deps: Deps = {
   store,
   read: readDocument,
   enqueue: (chatId, fileId) => batcher.add(chatId, fileId),
+  tryClaim: (chatId, text) => {
+    if (!invites.claim(text)) return false;
+    store.addOperator(chatId);
+    console.log(`[ruxsat] chat ${chatId} xodimlar ro'yxatiga qo'shildi`);
+    return true;
+  },
+  newCode: () => ({ code: invites.create(), minutes: CODE_TTL_MINUTES }),
 };
 
 let running = true;
@@ -53,24 +96,83 @@ function schedulePurge() {
   timer.unref();
 }
 
+/** Birinchi ishga tushirish: hech kim ruxsatga ega bo'lmasa, kod chiqaramiz. */
+function announceFirstRun(botUsername: string) {
+  const total = store.operatorCount() + config.operators.length;
+  if (total > 0) {
+    console.log(`Ruxsat berilgan xodimlar: ${total}`);
+    return;
+  }
+
+  const code = invites.create();
+  console.log(
+    [
+      "",
+      "─".repeat(58),
+      "  BIRINCHI ISHGA TUSHIRISH",
+      "",
+      `  1. Telegramda botni oching:  https://t.me/${botUsername}`,
+      "  2. Unga quyidagi kodni yuboring:",
+      "",
+      `        ${code}`,
+      "",
+      `  Shundan keyin botdan foydalanishingiz mumkin.`,
+      `  Kod ${CODE_TTL_MINUTES} daqiqa amal qiladi va bir marta ishlatiladi.`,
+      "─".repeat(58),
+      "",
+    ].join("\n"),
+  );
+}
+
 async function main() {
+  // Token va kalit haqiqatan ishlaydimi — darhol tekshiramiz
+  let me: { username: string };
+  try {
+    me = await tg.call<{ username: string }>("getMe");
+  } catch (err) {
+    // Tarmoq muammosi va xato tokenni ajratamiz — yechimi butunlay boshqacha
+    if (err instanceof TelegramError && err.network) {
+      console.error(
+        [
+          "",
+          "Telegramga ulanib bo'lmadi — bu token muammosi emas, tarmoq muammosi.",
+          "",
+          "Tekshirib ko'ring:",
+          "  • internet ishlayaptimi;",
+          "  • Telegram shu tarmoqda ochiqmi (ish joyidagi faervol to'smayaptimi);",
+          "  • VPN yoqilgan bo'lsa, o'chirib ko'ring yoki aksincha yoqib ko'ring.",
+          "",
+          `Tafsilot: ${err.message}`,
+          "",
+        ].join("\n"),
+      );
+    } else if (err instanceof TelegramError && err.code === 401) {
+      console.error(
+        [
+          "",
+          "BOT_TOKEN qabul qilinmadi (401).",
+          "",
+          "@BotFather ga kirib /mybots → botingiz → API Token dan tokenni qayta",
+          "ko'chirib, .env fayliga qo'yasiz. Tokenni tirnoqqa olish shart emas.",
+          "",
+        ].join("\n"),
+      );
+    } else {
+      console.error(
+        `\nTelegram botga ulanib bo'lmadi.\nXato: ${err instanceof Error ? err.message : err}\n`,
+      );
+    }
+    process.exit(1);
+  }
+
   await tg.setMyCommands(COMMANDS);
 
-  const me = await tg.call<{ username: string }>("getMe");
   console.log(`Bot ishga tushdi: @${me.username}`);
   console.log(`Model: ${config.model}`);
-  console.log(`Ruxsat berilgan xodimlar: ${config.operators.length}`);
   console.log(`Saqlash muddati: ${config.retentionDays} kun`);
   console.log(`Bazadagi yozuvlar: ${store.count()}`);
 
-  if (config.operators.length === 0) {
-    console.warn(
-      "\nOGOHLIK: OPERATORS bo'sh — bot hech kim bilan ishlamaydi.\n" +
-        "Botga /start yozing, pastda chat id ko'rinadi, uni .env dagi\n" +
-        "OPERATORS ga qo'shib botni qaytadan ishga tushiring.\n",
-    );
-  }
-
+  announceFirstRun(me.username);
   schedulePurge();
 
   while (running) {
@@ -79,12 +181,12 @@ async function main() {
       for (const update of updates) {
         offset = update.update_id + 1;
 
-        // Chat id'ni yozamiz — xodimni .env ga qo'shish uchun kerak.
+        // Chat id'ni yozamiz — tashxis uchun kerak.
         // Xabar MAZMUNI (ism, pasport, rasm) hech qachon yozilmaydi.
         const chat = update.message?.chat;
         if (chat?.type === "private") {
-          const known = config.operators.includes(String(chat.id));
-          console.log(`[xabar] chat ${chat.id}${known ? "" : " — ro'yxatda YO'Q"}`);
+          const known = isOperator(chat.id) || store.isOperator(chat.id);
+          console.log(`[xabar] chat ${chat.id}${known ? "" : " — ruxsatsiz"}`);
         }
 
         try {

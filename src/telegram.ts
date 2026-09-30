@@ -19,6 +19,22 @@ export type TgUpdate = {
   };
 };
 
+/**
+ * Telegram xatosi. `network` — ulanish/proksi muammosi (token emas),
+ * `code` — Telegram qaytargan xato kodi (401 = token xato).
+ */
+export class TelegramError extends Error {
+  readonly network: boolean;
+  readonly code: number | undefined;
+
+  constructor(message: string, info: { network?: boolean; code?: number } = {}) {
+    super(message);
+    this.name = "TelegramError";
+    this.network = info.network ?? false;
+    this.code = info.code;
+  }
+}
+
 export class Telegram {
   private readonly token: string;
 
@@ -31,13 +47,41 @@ export class Telegram {
   }
 
   async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    const res = await fetch(`${this.base}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(params),
-    });
-    const body = (await res.json()) as { ok: boolean; result?: T; description?: string };
-    if (!body.ok) throw new Error(`Telegram ${method}: ${body.description ?? res.status}`);
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(params),
+      });
+    } catch (err) {
+      // Internet yo'q, DNS ishlamadi, proksi/faervol to'sdi
+      throw new TelegramError(
+        `Telegramga ulanib bo'lmadi (${method}): ${err instanceof Error ? err.message : err}`,
+        { network: true },
+      );
+    }
+
+    // Javob JSON bo'lmasligi mumkin: faervol yoki proksi HTML/matn qaytaradi.
+    // `res.json()` bunda "Unexpected token" deb tushunarsiz xato berardi.
+    const text = await res.text();
+    let body: { ok: boolean; result?: T; description?: string; error_code?: number };
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new TelegramError(
+        `Telegram javobi tushunarsiz (${method}, HTTP ${res.status}): ` +
+          `${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`,
+        { network: true },
+      );
+    }
+
+    if (!body.ok) {
+      throw new TelegramError(
+        `Telegram ${method}: ${body.description ?? `HTTP ${res.status}`}`,
+        { code: body.error_code ?? res.status },
+      );
+    }
     return body.result as T;
   }
 

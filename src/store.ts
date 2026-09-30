@@ -99,6 +99,14 @@ export class Store {
         rows integer not null,
         at text not null default (datetime('now'))
       );
+
+      -- Ruxsat berilgan xodimlar. .env dagi OPERATORS ga qo'shimcha:
+      -- birinchi xodim terminaldagi kod bilan o'zini shu yerga qo'shadi,
+      -- shunda chat id'ni qo'lda topish va botni qayta ishga tushirish kerak emas.
+      create table if not exists operators (
+        chat_id integer primary key,
+        added_at text not null default (datetime('now'))
+      );
     `);
 
     this.addMissingColumns();
@@ -131,6 +139,42 @@ export class Store {
         this.db.exec(`alter table pilgrims add column ${name} ${definition}`);
       }
     }
+  }
+
+  // --- Ruxsat berilgan xodimlar ---
+
+  /** Bazaga qo'shilgan xodimmi (`.env` dagi OPERATORS dan alohida). */
+  isOperator(chatId: number): boolean {
+    return (
+      this.db.prepare("select 1 from operators where chat_id = ?").get(chatId) !==
+      undefined
+    );
+  }
+
+  addOperator(chatId: number): void {
+    this.db
+      .prepare("insert or ignore into operators (chat_id) values (?)")
+      .run(chatId);
+  }
+
+  removeOperator(chatId: number): number {
+    const info = this.db.prepare("delete from operators where chat_id = ?").run(chatId);
+    return Number(info.changes);
+  }
+
+  operatorCount(): number {
+    const row = this.db.prepare("select count(*) as n from operators").get() as
+      | { n: number }
+      | undefined;
+    return row?.n ?? 0;
+  }
+
+  listOperators(): number[] {
+    return (
+      this.db
+        .prepare("select chat_id from operators order by added_at")
+        .all() as unknown as { chat_id: number }[]
+    ).map((r) => r.chat_id);
   }
 
   // --- Xodimning joriy guruhi ---

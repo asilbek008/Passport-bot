@@ -16,6 +16,7 @@ const { handleUpdate, processBatch } = await import("../src/bot.ts");
 const { Store } = await import("../src/store.ts");
 const { checkDigit, parseMrz } = await import("../src/mrz.ts");
 const { splitMessage } = await import("../src/batch.ts");
+const { Invites } = await import("../src/invites.ts");
 import type { Telegram, TgUpdate } from "../src/telegram.ts";
 import type { ReadResult } from "../src/vision.ts";
 
@@ -125,7 +126,19 @@ function makeDeps(reads: Record<string, ReadResult | "throw">) {
     return r;
   }) as never;
 
-  return { deps, sent, edits, documents, queued, store };
+  // Bir martalik kodlar — birinchi xodimni ro'yxatga qo'shish uchun
+  const invites = new Invites(60);
+  (deps as Record<string, unknown>).tryClaim = (chatId: number, text: string) => {
+    if (!invites.claim(text)) return false;
+    store.addOperator(chatId);
+    return true;
+  };
+  (deps as Record<string, unknown>).newCode = () => ({
+    code: invites.create(),
+    minutes: 60,
+  });
+
+  return { deps, sent, edits, documents, queued, store, invites };
 }
 
 const photoUpdate = (chatId: number, fileId: string): TgUpdate => ({
@@ -347,6 +360,109 @@ test("bo'sh guruhda /excel fayl yubormaydi", async () => {
   await handleUpdate(textUpdate(OPERATOR, "/excel"), deps as never);
   assert.equal(documents.length, 0);
   assert.match(sent.at(-1)!.text, /qabul qilinmagan/);
+  store.close();
+});
+
+// --- Ruxsat olish (birinchi ishga tushirish) ---
+
+test("to'g'ri kod bilan begona odam xodimga aylanadi", async () => {
+  const { deps, sent, store, invites } = makeDeps({});
+  const code = invites.create();
+
+  // Kodni bilmasa — rad etiladi
+  await handleUpdate(textUpdate(STRANGER, "ABC999"), deps as never);
+  assert.match(sent.at(-1)!.text, /faqat xodimlar uchun/);
+  assert.equal(store.isOperator(STRANGER), false);
+
+  // To'g'ri kod bilan — ruxsat oladi
+  await handleUpdate(textUpdate(STRANGER, code), deps as never);
+  assert.match(sent.at(-1)!.text, /Ruxsat berildi/);
+  assert.equal(store.isOperator(STRANGER), true);
+
+  // Endi buyruq ishlaydi
+  await handleUpdate(textUpdate(STRANGER, "/guruh Sinov"), deps as never);
+  assert.match(sent.at(-1)!.text, /Sinov/);
+  store.close();
+});
+
+test("kod bir marta ishlaydi — ikkinchi odam o'ta olmaydi", async () => {
+  const { deps, sent, store, invites } = makeDeps({});
+  const code = invites.create();
+
+  await handleUpdate(textUpdate(STRANGER, code), deps as never);
+  assert.equal(store.isOperator(STRANGER), true);
+
+  // Boshqa odam o'sha kod bilan
+  await handleUpdate(textUpdate(555, code), deps as never);
+  assert.match(sent.at(-1)!.text, /faqat xodimlar uchun/);
+  assert.equal(store.isOperator(555), false);
+  store.close();
+});
+
+test("kod rasm bilan emas, faqat matn bilan ishlaydi", async () => {
+  const { deps, queued, store, invites } = makeDeps({});
+  invites.create();
+  // Ruxsatsiz odam rasm yuborsa — navbatga tushmaydi
+  await handleUpdate(photoUpdate(STRANGER, "f1"), deps as never);
+  assert.equal(queued.length, 0);
+  assert.equal(store.isOperator(STRANGER), false);
+  store.close();
+});
+
+test("/kod yangi xodim uchun kod beradi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/kod"), deps as never);
+
+  const text = sent.at(-1)!.text;
+  assert.match(text, /Yangi xodim uchun kod/);
+  const match = text.match(/`([23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6})`/);
+  assert.ok(match, `kod topilmadi: ${text}`);
+
+  // Hamkasb shu kod bilan ruxsat oladi
+  await handleUpdate(textUpdate(777, match![1]), deps as never);
+  assert.equal(store.isOperator(777), true);
+  store.close();
+});
+
+test("/xodimlar .env va bazadagilarni birga ko'rsatadi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  store.addOperator(333);
+  await handleUpdate(textUpdate(OPERATOR, "/xodimlar"), deps as never);
+
+  const text = sent.at(-1)!.text;
+  assert.match(text, /333/, "bazadagi xodim");
+  assert.match(text, /111/, ".env dagi xodim");
+  assert.match(text, /\.env/, "manbasi ko'rsatilishi kerak");
+  assert.match(text, /← siz/, "o'zi belgilanishi kerak");
+  store.close();
+});
+
+test("/xodim_ochir ruxsatni olib tashlaydi, o'zini emas", async () => {
+  const { deps, sent, store } = makeDeps({});
+  store.addOperator(333);
+
+  await handleUpdate(textUpdate(OPERATOR, "/xodim_ochir 333"), deps as never);
+  assert.match(sent.at(-1)!.text, /chiqarildi/);
+  assert.equal(store.isOperator(333), false);
+
+  // O'zini chiqarib bo'lmaydi
+  store.addOperator(OPERATOR);
+  await handleUpdate(textUpdate(OPERATOR, `/xodim_ochir ${OPERATOR}`), deps as never);
+  assert.match(sent.at(-1)!.text, /O'zingizni/);
+  assert.equal(store.isOperator(OPERATOR), true);
+
+  // Raqamsiz
+  await handleUpdate(textUpdate(OPERATOR, "/xodim_ochir"), deps as never);
+  assert.match(sent.at(-1)!.text, /Chat raqamini yozing/);
+  store.close();
+});
+
+test("bazadagi xodim .env siz ham ishlaydi", async () => {
+  const { deps, queued, store } = makeDeps({});
+  // 444 .env da yo'q, faqat bazada
+  store.addOperator(444);
+  await handleUpdate(photoUpdate(444, "f1"), deps as never);
+  assert.deepEqual(queued, [{ chatId: 444, fileId: "f1" }]);
   store.close();
 });
 

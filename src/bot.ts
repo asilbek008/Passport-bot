@@ -25,8 +25,23 @@ export type Deps = {
   read: typeof readDocument;
   /** Rasmni navbatga qo'yish — `index.ts` dagi `Batcher` beradi */
   enqueue: (chatId: number, fileId: string) => void;
+  /**
+   * Birinchi xodimni ro'yxatga qo'shish: terminalda chiqqan bir martalik
+   * kodni yuborsa `true` qaytaradi. `index.ts` beradi.
+   */
+  tryClaim?: (chatId: number, text: string) => boolean;
+  /** Hamkasb uchun yangi bir martalik kod yaratadi. `index.ts` beradi. */
+  newCode?: () => { code: string; minutes: number };
   now?: () => Date;
 };
+
+/**
+ * Bu chat botdan foydalanishi mumkinmi.
+ * Ikki manba: `.env` dagi `OPERATORS` va bazaga kod bilan qo'shilganlar.
+ */
+function allowed(chatId: number, store: Store): boolean {
+  return isOperator(chatId) || store.isOperator(chatId);
+}
 
 export const COMMANDS = [
   { command: "guruh", description: "Joriy safar guruhini belgilash" },
@@ -57,13 +72,20 @@ export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> 
     return;
   }
 
+  const raw = (msg.text ?? msg.caption ?? "").trim();
+
   // Oq ro'yxat: birinchi va eng muhim tekshiruv
-  if (!isOperator(chatId)) {
+  if (!allowed(chatId, deps.store)) {
+    // Birinchi ishga tushirishda terminalda bir martalik kod chiqadi.
+    // Uni faqat serverga/kompyuterga kirish huquqi bor odam ko'radi,
+    // shuning uchun kodni yuborgan kishi — egasining o'zi.
+    if (raw && deps.tryClaim?.(chatId, raw)) {
+      await reply(deps.tg, chatId, t.claimed(chatId));
+      return;
+    }
     await deps.tg.sendMessage(chatId, t.notOperator);
     return;
   }
-
-  const raw = (msg.text ?? msg.caption ?? "").trim();
 
   if (raw.startsWith("/")) {
     const [head, ...rest] = raw.split(/\s+/);
@@ -217,6 +239,44 @@ async function handleCommand(
     case "tozalash":
       await tg.sendMessage(chatId, t.purged(store.purge()));
       return;
+
+    // --- Xodimlarni boshqarish ---
+
+    case "kod": {
+      if (!deps.newCode) {
+        await tg.sendMessage(chatId, "Kod yaratish bu yerda mavjud emas.");
+        return;
+      }
+      const { code, minutes } = deps.newCode();
+      await reply(tg, chatId, t.inviteCode(code, minutes));
+      return;
+    }
+
+    case "xodimlar":
+      await reply(
+        tg,
+        chatId,
+        t.operatorList(store.listOperators(), config.operators, chatId),
+      );
+      return;
+
+    case "xodim_ochir": {
+      const id = Number(argument.replace(/\s+/g, ""));
+      if (!argument || !Number.isInteger(id)) {
+        await tg.sendMessage(chatId, t.needChatId);
+        return;
+      }
+      if (id === chatId) {
+        await tg.sendMessage(chatId, t.cannotRemoveSelf);
+        return;
+      }
+      const removed = store.removeOperator(id);
+      await tg.sendMessage(
+        chatId,
+        removed > 0 ? t.operatorRemoved(id) : t.operatorNotFound(id),
+      );
+      return;
+    }
 
     default:
       await reply(tg, chatId, t.help);
