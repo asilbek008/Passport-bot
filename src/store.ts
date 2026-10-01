@@ -30,13 +30,28 @@ export type Pilgrim = {
   place_of_birth: string | null;
   authority: string | null;
   mrz_format: string;
+  /** "pasport" | "id" | "viza" | "boshqa" — MRZ dagi hujjat kodidan */
+  doc_kind: string;
+  /** Davlat nomi o'zbekcha, masalan "O'zbekiston" */
+  doc_country: string;
+  /** Hujjat turining to'liq nomi: "O'zbek pasporti" */
+  doc_label: string;
+  /** Rasm fayli: `<guruh>/<FAMILIYA_ISM_turi>.jpg`. Yo'q bo'lsa null. */
+  photo_file: string | null;
   created_at: string;
 };
 
 export type NewPilgrim = Omit<Pilgrim, "id" | "created_at">;
 
-/** `save()` natijasi — xodimga "yangi" yoki "yangilandi" deb aytish uchun. */
-export type SaveResult = "inserted" | "updated";
+/**
+ * `save()` natijasi.
+ * `previousPhoto` — oldingi rasm yo'li: nomi yoki guruhi o'zgargan bo'lsa,
+ * chaqiruvchi eski faylni o'chiradi (aks holda yetim fayl qolib ketardi).
+ */
+export type SaveResult = {
+  state: "inserted" | "updated";
+  previousPhoto: string | null;
+};
 
 export class Store {
   private db: DatabaseSync;
@@ -68,6 +83,10 @@ export class Store {
         place_of_birth text,
         authority text,
         mrz_format text not null,
+        doc_kind text not null default '',
+        doc_country text not null default '',
+        doc_label text not null default '',
+        photo_file text,
         created_at text not null default (datetime('now'))
       );
 
@@ -132,6 +151,10 @@ export class Store {
       issue_date: "text",
       place_of_birth: "text",
       authority: "text",
+      doc_kind: "text not null default ''",
+      doc_country: "text not null default ''",
+      doc_label: "text not null default ''",
+      photo_file: "text",
     };
 
     for (const [name, definition] of Object.entries(wanted)) {
@@ -224,17 +247,18 @@ export class Store {
    * tushgan bo'lsa, keyingi xiraroq rasm uni yo'q qilib qo'ymaydi.
    */
   save(p: NewPilgrim): SaveResult {
-    const existed = this.db
-      .prepare("select 1 from pilgrims where doc_number = ? and birth_date = ?")
-      .get(p.doc_number, p.birth_date) !== undefined;
+    const before = this.db
+      .prepare("select photo_file from pilgrims where doc_number = ? and birth_date = ?")
+      .get(p.doc_number, p.birth_date) as { photo_file: string | null } | undefined;
 
     this.db
       .prepare(
         `insert into pilgrims (
            added_by, group_label, surname, given_names, doc_code, doc_number,
            nationality, birth_date, sex, expiry_date, personal_number,
-           issue_date, place_of_birth, authority, mrz_format
-         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           issue_date, place_of_birth, authority, mrz_format,
+           doc_kind, doc_country, doc_label, photo_file
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          on conflict (doc_number, birth_date) do update set
            added_by = excluded.added_by,
            group_label = case
@@ -251,16 +275,43 @@ export class Store {
            place_of_birth = coalesce(excluded.place_of_birth, place_of_birth),
            authority = coalesce(excluded.authority, authority),
            mrz_format = excluded.mrz_format,
+           doc_kind = excluded.doc_kind,
+           doc_country = excluded.doc_country,
+           doc_label = excluded.doc_label,
+           photo_file = coalesce(excluded.photo_file, photo_file),
            created_at = datetime('now')`,
       )
       .run(
         p.added_by, p.group_label, p.surname, p.given_names, p.doc_code,
         p.doc_number, p.nationality, p.birth_date, p.sex, p.expiry_date,
         p.personal_number, p.issue_date, p.place_of_birth, p.authority,
-        p.mrz_format,
+        p.mrz_format, p.doc_kind, p.doc_country, p.doc_label, p.photo_file,
       );
 
-    return existed ? "updated" : "inserted";
+    // Rasm yo'li o'zgargan bo'lsa (ism yoki guruh boshqa bo'ldi) eski
+    // faylni chaqiruvchi o'chiradi — yetim fayl qolmasligi uchun
+    const previousPhoto =
+      before?.photo_file && before.photo_file !== p.photo_file
+        ? before.photo_file
+        : null;
+
+    return { state: before === undefined ? "inserted" : "updated", previousPhoto };
+  }
+
+  /** Guruhdagi (yoki hamma) yozuvlarning rasm yo'llari. */
+  photoPaths(group?: string): string[] {
+    const rows = (
+      group
+        ? this.db
+            .prepare(
+              "select photo_file from pilgrims where group_label = ? and photo_file is not null",
+            )
+            .all(group)
+        : this.db
+            .prepare("select photo_file from pilgrims where photo_file is not null")
+            .all()
+    ) as unknown as { photo_file: string }[];
+    return rows.map((r) => r.photo_file);
   }
 
   /** Hamma yozuv, yoki faqat bitta guruh. */
@@ -298,28 +349,37 @@ export class Store {
     return row?.n ?? 0;
   }
 
-  /** Pasport raqami bo'yicha bitta yozuvni o'chiradi. */
-  deleteByDocNumber(docNumber: string): number {
+  /**
+   * O'chirish amallari o'chirilgan yozuvlarning RASM YO'LLARINI qaytaradi.
+   * Fayllarni chaqiruvchi o'chiradi — shunda bu modul faqat baza bilan
+   * ishlaydi va diskni bilmaydi.
+   */
+  private removeWhere(where: string, ...args: unknown[]): { count: number; photos: string[] } {
+    const photos = (
+      this.db
+        .prepare(`select photo_file from pilgrims where ${where} and photo_file is not null`)
+        .all(...(args as never[])) as unknown as { photo_file: string }[]
+    ).map((r) => r.photo_file);
+
     const info = this.db
-      .prepare("delete from pilgrims where doc_number = ?")
-      .run(docNumber);
-    return Number(info.changes);
+      .prepare(`delete from pilgrims where ${where}`)
+      .run(...(args as never[]));
+    return { count: Number(info.changes), photos };
+  }
+
+  /** Pasport raqami bo'yicha bitta yozuvni o'chiradi. */
+  deleteByDocNumber(docNumber: string): { count: number; photos: string[] } {
+    return this.removeWhere("doc_number = ?", docNumber);
   }
 
   /** Butun guruhni o'chiradi (safar tugagach). */
-  deleteGroup(group: string): number {
-    const info = this.db
-      .prepare("delete from pilgrims where group_label = ?")
-      .run(group);
-    return Number(info.changes);
+  deleteGroup(group: string): { count: number; photos: string[] } {
+    return this.removeWhere("group_label = ?", group);
   }
 
   /** Muddati o'tgan yozuvlarni o'chiradi (saqlash muddati siyosati). */
-  purge(days = config.retentionDays): number {
-    const info = this.db
-      .prepare(`delete from pilgrims where created_at < datetime('now', ?)`)
-      .run(`-${days} days`);
-    return Number(info.changes);
+  purge(days = config.retentionDays): { count: number; photos: string[] } {
+    return this.removeWhere(`created_at < datetime('now', ?)`, `-${days} days`);
   }
 
   logExport(chatId: number, rows: number) {

@@ -14,6 +14,7 @@ import { Store } from "./store.ts";
 import { readDocument } from "./vision.ts";
 import { Batcher } from "./batch.ts";
 import { Invites } from "./invites.ts";
+import { deletePhotos } from "./photos.ts";
 import { handleUpdate, processBatch, COMMANDS, type Deps } from "./bot.ts";
 
 const CODE_TTL_MINUTES = 60;
@@ -86,7 +87,13 @@ function schedulePurge() {
   const run = () => {
     try {
       const removed = store.purge();
-      if (removed > 0) console.log(`[tozalash] ${removed} ta eski yozuv o'chirildi`);
+      // Yozuv bilan birga rasmi ham o'chadi — saqlash muddati siyosati
+      const photos = deletePhotos(removed.photos);
+      if (removed.count > 0) {
+        console.log(
+          `[tozalash] ${removed.count} ta eski yozuv va ${photos} ta rasm o'chirildi`,
+        );
+      }
     } catch (err) {
       console.error("[tozalash] xato:", err instanceof Error ? err.message : err);
     }

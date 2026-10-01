@@ -15,6 +15,17 @@ import { config, isOperator } from "./config.ts";
 import { monthsUntilExpiry, failedFields } from "./mrz.ts";
 import { splitMessage } from "./batch.ts";
 import { buildWorkbook, workbookName, workbookCaption, passportState } from "./excel.ts";
+import { documentType, photoBaseName } from "./document-type.ts";
+import { makeZip, type ZipEntry } from "./zip.ts";
+import {
+  savePhoto,
+  deletePhoto,
+  deletePhotos,
+  readPhoto,
+  photoPath,
+  groupFolder,
+  removeGroupFolder,
+} from "./photos.ts";
 import type { Store } from "./store.ts";
 import type { Telegram, TgUpdate } from "./telegram.ts";
 import type { readDocument } from "./vision.ts";
@@ -215,6 +226,62 @@ async function handleCommand(
       return;
     }
 
+    case "zip": {
+      const wantAll = /^(hammasi|all|barcha)$/i.test(argument);
+      const scope = wantAll ? undefined : group || undefined;
+      const rows = store.all(scope);
+      if (rows.length === 0) {
+        await tg.sendMessage(chatId, t.emptyList(wantAll ? "" : group));
+        return;
+      }
+
+      const folder = wantAll ? "umra-hujjatlar" : groupFolder(group);
+      const entries: ZipEntry[] = [];
+      const missing: string[] = [];
+
+      for (const p of rows) {
+        const file = p.photo_file;
+        const bytes = file ? readPhoto(file) : null;
+        if (!file || !bytes) {
+          missing.push(`${esc(p.surname)} ${esc(p.given_names)}`);
+          continue;
+        }
+        // Arxiv ichida: <papka>/<FAMILIYA_ISM_turi>.jpg
+        const name = file.includes("/") ? file.slice(file.lastIndexOf("/") + 1) : file;
+        entries.push({
+          path: `${folder}/${wantAll ? `${groupFolder(p.group_label)}/` : ""}${name}`,
+          data: bytes,
+        });
+      }
+
+      // Excel ham arxivga qo'shiladi — bitta faylda hammasi
+      entries.push({
+        path: `${folder}/${workbookName(now, wantAll ? undefined : group || undefined)}`,
+        data: await buildWorkbook(rows, now),
+      });
+
+      const zip = makeZip(entries);
+      const sizeMb = zip.length / (1024 * 1024);
+      if (sizeMb > config.zipMaxMb) {
+        await reply(tg, chatId, t.zipTooBig(sizeMb, config.zipMaxMb));
+        return;
+      }
+
+      await tg.sendDocument(
+        chatId,
+        `${folder}-${now.toISOString().slice(0, 10)}.zip`,
+        zip,
+        t.zipCaption({
+          photos: entries.length - 1,
+          people: rows.length,
+          missing,
+          sizeMb,
+        }),
+      );
+      store.logExport(chatId, rows.length);
+      return;
+    }
+
     case "ochir": {
       if (!argument) {
         await tg.sendMessage(chatId, t.needDocNumber);
@@ -222,7 +289,12 @@ async function handleCommand(
       }
       const doc = argument.toUpperCase().replace(/\s+/g, "");
       const removed = store.deleteByDocNumber(doc);
-      await tg.sendMessage(chatId, removed > 0 ? t.deleted(doc) : t.notFound(doc));
+      // Yozuv bilan birga rasmi ham o'chadi
+      deletePhotos(removed.photos);
+      await tg.sendMessage(
+        chatId,
+        removed.count > 0 ? t.deleted(doc) : t.notFound(doc),
+      );
       return;
     }
 
@@ -232,13 +304,18 @@ async function handleCommand(
         return;
       }
       const removed = store.deleteGroup(argument);
-      await tg.sendMessage(chatId, t.groupDeleted(argument, removed));
+      deletePhotos(removed.photos);
+      removeGroupFolder(argument);
+      await tg.sendMessage(chatId, t.groupDeleted(argument, removed.count));
       return;
     }
 
-    case "tozalash":
-      await tg.sendMessage(chatId, t.purged(store.purge()));
+    case "tozalash": {
+      const removed = store.purge();
+      deletePhotos(removed.photos);
+      await tg.sendMessage(chatId, t.purged(removed.count));
       return;
+    }
 
     // --- Xodimlarni boshqarish ---
 
@@ -310,6 +387,9 @@ export async function processBatch(
   const ok: string[] = [];
   const failed: string[] = [];
   const warnings: string[] = [];
+  /** Shu guruhda allaqachon egallangan rasm yo'llari (nom to'qnashuvi uchun) */
+  const takenPaths = new Set(store.photoPaths(group || undefined));
+  let photoProblems = 0;
 
   for (let i = 0; i < fileIds.length; i++) {
     // Progressni har 3 rasmda yangilaymiz — har birida yangilash
@@ -345,7 +425,34 @@ export async function processBatch(
       continue;
     }
 
-    const { mrz, extra } = outcome;
+    const { mrz, extra, image } = outcome;
+
+    // Hujjat turi va davlati MRZ'dan — taxmin yo'q
+    const type = documentType(mrz);
+
+    // Rasm fayli odam o'qiydigan nom bilan saqlanadi.
+    // Bir xil ismli ikki kishi bo'lsa, ikkinchisiga pasport raqami qo'shiladi.
+    const relative = photoPath({
+      group,
+      baseName: photoBaseName({ ...mrz, type }),
+      docNumber: mrz.documentNumber,
+      mime: image.mime,
+      taken: takenPaths,
+    });
+
+    let saved: string | null = relative;
+    try {
+      savePhoto(relative, image.bytes);
+      takenPaths.add(relative);
+    } catch (err) {
+      // Rasm saqlanmasa ham MA'LUMOT saqlanadi — xodim qo'lda qo'shadi
+      console.error(
+        `[rasm] saqlanmadi: ${err instanceof Error ? err.message : "noma'lum"}`,
+      );
+      saved = null;
+      photoProblems++;
+    }
+
     const result = store.save({
       added_by: chatId,
       group_label: group,
@@ -362,7 +469,14 @@ export async function processBatch(
       place_of_birth: extra.placeOfBirth,
       authority: extra.authority,
       mrz_format: mrz.format,
+      doc_kind: type.kind,
+      doc_country: type.country,
+      doc_label: type.label,
+      photo_file: saved,
     });
+
+    // Ism yoki guruh o'zgargan bo'lsa eski rasm yetim qolmasin
+    deletePhoto(result.previousPhoto);
 
     ok.push(
       t.okLine({
@@ -370,7 +484,8 @@ export async function processBatch(
         givenNames: mrz.givenNames,
         documentNumber: mrz.documentNumber,
         expiryDate: mrz.expiryDate,
-        fresh: result === "inserted",
+        docLabel: type.label,
+        fresh: result.state === "inserted",
       }),
     );
 
@@ -417,12 +532,21 @@ type Outcome =
         placeOfBirth: string | null;
         authority: string | null;
       };
+      /** Rasmning o'zi — diskka saqlash uchun kerak */
+      image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
     }
   | { kind: "failed"; why: string }
   /** API'ning o'zi ishlamadi — qolgan rasmlarni o'qishdan ma'no yo'q */
   | { kind: "api"; why: string; retryable: boolean };
 
-/** Bitta rasmni yuklab, o'qib, natijasini qaytaradi. Saqlamaydi. */
+/**
+ * Bitta rasmni yuklab, o'qib, natijasini qaytaradi.
+ *
+ * Avval rasm o'qilgandan keyin xotirada tozalanardi (`bytes.fill(0)`),
+ * chunki saqlanmasligi kerak edi. Endi rasm ataylab diskka saqlanadi
+ * (viza arizasiga ilova qilish uchun), shuning uchun tozalashning ma'nosi
+ * yo'q — o'qilmagan rasm esa baribir hech qayerga yozilmaydi.
+ */
 async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> {
   let image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
   try {
@@ -443,6 +567,7 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
           placeOfBirth: result.placeOfBirth,
           authority: result.authority,
         },
+        image,
       };
     }
 
@@ -464,8 +589,5 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
     // Xato MATNI jurnalga yozilmaydi — ichida hujjat ma'lumoti bo'lishi mumkin
     console.error(`[read] xato turi: ${err instanceof Error ? err.name : "noma'lum"}`);
     return { kind: "failed", why: t.reasonTechnical };
-  } finally {
-    // Rasm xotirada ham qolmasin
-    image.bytes.fill(0);
   }
 }

@@ -37,9 +37,30 @@ Qo'llab-quvvatlanadigan formatlar:
 
 | Format | Hujjat | Tuzilishi |
 |---|---|---|
-| TD3 | Pasport (biometrik va qizil/zagran) | 2 qator × 44 belgi |
+| TD3 | Pasport (biometrik va zagran) | 2 qator × 44 belgi |
 | TD1 | ID karta | 3 qator × 30 belgi |
 | TD2 | Kamroq uchraydigan hujjatlar | 2 qator × 36 belgi |
+
+## Hujjat turi va davlat
+
+Bot har hujjatning **turini va davlatini MRZ'dan hisoblaydi** — model taxmin
+qilmaydi:
+
+- **tur** — hujjat kodidan: `P…` pasport, `I…`/`AC` ID karta, `V…` viza
+  (ICAO 9303). Diplomatik (`PD`) va xizmat (`PS`) pasportlari ham belgilanadi;
+- **davlat** — fuqarolik kodidan: `UZB`, `TJK`, `KGZ`, `KAZ`, `TKM` va boshqalar
+  (ISO 3166-1). Ro'yxatda yo'q davlat uchun kodning o'zi qoldiriladi —
+  o'ylab topilgan nom yozilmaydi.
+
+Natijada: `O'zbek pasporti`, `Tojik ID kartasi`, `Qozoq pasporti (diplomatik)`.
+Shu nom Excelda ustun bo'lib chiqadi va rasm faylining nomiga kiradi.
+
+> **Muqova rangi haqida.** «Qizil pasport» — muqovaning rangi, u MRZ'da yo'q
+> va rasmdan ishonchli aniqlab bo'lmaydi, shuning uchun bot bunday deb
+> belgilamaydi. Buning o'rniga aniq bilinadigan narsa yoziladi: **pasportmi
+> yoki ID kartami** va **qaysi davlatning** hujjati. Viza arizasi uchun aynan
+> shu ikkisi talab qilinadi. Agar sizga eski/yangi pasportni ajratish kerak
+> bo'lsa — ayting, berilgan sana bo'yicha qo'shamiz.
 
 ---
 
@@ -102,6 +123,7 @@ kodni yuborsa, u ham ruxsat oladi. `/xodimlar` — ro'yxat, `/xodim_ochir <raqam
 /guruh Umra mart          ← qaysi safar guruhi bilan ishlayotganingiz
 <pasport rasmlarini yuborasiz>
 /excel                    ← tayyor jadval
+/zip                      ← rasmlar + jadval bitta arxivda
 ```
 
 Rasmlarni **bittalab yoki albom qilib** (bir necha o'nlab) yuborish mumkin.
@@ -135,6 +157,8 @@ O'qilmadi (2) — qaytadan suratga oling:
 | `/royxat` | Joriy guruhdagi kishilar |
 | `/excel` | Joriy guruhni Excel qilib beradi |
 | `/excel hammasi` | Barcha guruhlarni bitta faylda |
+| `/zip` | Joriy guruh: rasmlar + Excel bitta arxivda |
+| `/zip hammasi` | Barcha guruhlar arxivda (har biri o'z papkasida) |
 | `/ogohlik` | Pasporti tez tugaydiganlar |
 | `/ochir AB1234567` | Bitta yozuvni o'chiradi |
 | `/guruhni_ochir Umra mart` | Butun guruhni o'chiradi |
@@ -145,13 +169,36 @@ O'qilmadi (2) — qaytadan suratga oling:
 
 ### Excel faylda nima bo'ladi
 
-Familiya, Ism, Jinsi, Tug'ilgan sana, Fuqaroligi, Hujjat turi, Pasport
-raqami, Berilgan sana, Amal muddati, **Qolgan (oy)**, JSHSHIR, Tug'ilgan joy,
-Kim bergan, Qabul qilingan vaqt, Izoh.
+Guruh, **Familiya**, **Ism**, **Hujjat turi**, **Davlat**, Jinsi, Tug'ilgan
+sana, Fuqaroligi, Kod, Pasport raqami, Berilgan sana, Amal muddati,
+**Qolgan (oy)**, JSHSHIR, Tug'ilgan joy, Kim bergan, Qabul qilingan vaqt, Izoh.
 
 **Qizil qator** — pasport muddati tugagan. **Sariq qator** — `MIN_PASSPORT_MONTHS`
 (standart 6) oydan kam qolgan. Shunda faylni ochishingiz bilan kimga
 qo'ng'iroq qilish kerakligini ko'rasiz, 50 qatorni ko'zdan kechirmasdan.
+
+### Zip arxivda nima bo'ladi
+
+`/zip` shunday arxiv beradi:
+
+```
+umra-mart/
+  KARIMOV_AZIZ_uzb-pasport.jpg
+  SALIMOVA_NARGIZA_uzb-id.jpg
+  RAHMONOV_FIRUZ_tjk-pasport.jpg
+  umra-hujjatlar-umra-mart-2026-10-01.xlsx
+```
+
+Har rasm fayli **familiya, ism va hujjat turi** bilan nomlanadi — konsullikka
+yoki Nusuk tizimiga yuklashda qaysi fayl kimning hujjati ekani darhol ko'rinadi.
+Nomlar faqat ASCII harflardan (`O'` → `O`, `G'` → `G`), shuning uchun har
+qanday tizimda ochiladi.
+
+Bir xil ism-familiyali ikki kishi bo'lsa, ikkinchisining nomiga pasport raqami
+qo'shiladi — birining rasmi yo'qolib ketmaydi.
+
+Arxiv `ZIP_MAX_MB` (standart 45) dan katta bo'lsa yuborilmaydi: Telegram
+chegarasi 50 MB. Bunda guruhlarga bo'lib oling.
 
 ### Yaxshi rasm uchun
 
@@ -166,10 +213,15 @@ qo'ng'iroq qilish kerakligini ko'rasiz, 50 qatorni ko'zdan kechirmasdan.
 
 Bu mijozlarning shaxsiy hujjatlari. Bot shunga qarab qurilgan:
 
+> **O'zgargan qoida.** Boshida bot rasmni ataylab **saqlamasdi**. Egasining
+> talabi bo'yicha endi **saqlaydi** — chunki viza arizasiga pasport skanini
+> ilova qilish kerak. Demak `PHOTOS_DIR` papkasida mijozlarning pasport
+> skanlari turadi va u himoyaga muhtoj (pastda).
+
 | | |
 |---|---|
-| **Rasm** | Saqlanmaydi. O'qilgach xotiradan ham tozalanadi (`bytes.fill(0)`), diskka hech qachon yozilmaydi |
-| **Kim ko'radi** | Faqat `OPERATORS` dagi xodimlar. Bot ochiq emas |
+| **Rasm** | `PHOTOS_DIR` da saqlanadi. Yozuv o'chirilganda rasmi ham o'chadi; `RETENTION_DAYS` o'tgach ikkisi ham avtomatik ketadi |
+| **Kim ko'radi** | Faqat ruxsat berilgan xodimlar. Bot ochiq emas |
 | **Jurnal** | Faqat chat raqami. Ism, pasport raqami, xato matni — **yozilmaydi** |
 | **Saqlanmaydi** | Telegram ismi, username, telefon raqami |
 | **Muddat** | `RETENTION_DAYS` (standart 180) kundan keyin avtomatik o'chadi, kuniga bir marta tekshiriladi |
@@ -182,9 +234,11 @@ Nimalar sizning zimmangizda:
   Mijoz pasportini viza uchun berganini va u shu maqsadda ishlatilishini
   bilishi kerak. Ma'lumotni boshqa maqsadda ishlatish yoki uchinchi shaxsga
   berish — bu botning ishi emas va qonunga ham tegishli.
-- **Baza faylini himoyalash.** `data/umra.db` ichida mijozlarning pasport
-  ma'lumoti bor. Umumiy kompyuterda qoldirmang, zaxira nusxasini ochiq joyga
-  yuklamang.
+- **Baza va rasm papkasini himoyalash.** `data/umra.db` ichida pasport
+  ma'lumotlari, `data/photos/` ichida **pasport skanlari** bor. Umumiy
+  kompyuterda qoldirmang, zaxira nusxasini ochiq joyga (Google Drive, Telegram
+  «Saqlanganlar») yuklamang. Noutbukni diskini shifrlab qo'ying
+  (Windows BitLocker, macOS FileVault).
 - **Safar tugagach o'chirish.** `/guruhni_ochir <nom>` — ma'lumot kerak
   bo'lmasa, saqlab turishning ma'nosi yo'q.
 - **`.env` ni sir tutish.** Ichida bot tokeni va API kaliti bor.
@@ -199,6 +253,9 @@ src/
   vision.ts     Claude'ga rasm yuborib, MRZ qatorlarini matn qilib olish
   store.ts      SQLite (node:sqlite — tashqi kutubxonasiz)
   excel.ts      .xlsx tuzish
+  document-type.ts  Hujjat turi va davlat (MRZ'dan, determinlashgan)
+  photos.ts     Rasm fayllarini saqlash/o'chirish
+  zip.ts        ZIP arxiv tuzish (zlib bilan, kutubxonasiz)
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
   bot.ts        Suhbat mantig'i (bog'liqliklar tashqaridan — testdan o'tadi)
   telegram.ts   Bot API (faqat fetch, SDK'siz)
@@ -215,7 +272,7 @@ scripts/
 Tekshirish:
 
 ```bash
-npm test         # 79 test
+npm test         # 121 test
 npm run typecheck
 ```
 

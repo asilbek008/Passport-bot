@@ -52,6 +52,25 @@ export const config = {
     return process.env.DB_PATH ?? "./data/umra.db";
   },
 
+  /**
+   * Hujjat rasmlari saqlanadigan papka.
+   *
+   * DIQQAT: bu papkada mijozlarning pasport skanlari turadi. Umumiy
+   * kompyuterda qoldirmang, zaxirasini ochiq joyga yuklamang.
+   * `RETENTION_DAYS` o'tgach rasm ham yozuv bilan birga o'chadi.
+   */
+  get photosDir(): string {
+    return process.env.PHOTOS_DIR ?? "./data/photos";
+  },
+
+  /**
+   * Zip arxivining chegarasi (MB). Telegram bot 50 MB dan katta fayl
+   * yubora olmaydi, shuning uchun undan pastda to'xtaymiz.
+   */
+  get zipMaxMb(): number {
+    return num("ZIP_MAX_MB", 45);
+  },
+
   /** Ma'lumot shu kundan keyin o'zi o'chadi (viza tugagach kerak emas) */
   get retentionDays(): number {
     return num("RETENTION_DAYS", 180);

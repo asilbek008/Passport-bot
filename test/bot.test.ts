@@ -12,6 +12,14 @@ process.env.OPERATORS = "111,222";
 process.env.MIN_PASSPORT_MONTHS = "6";
 process.env.DAILY_LIMIT = "10";
 
+// Rasmlar vaqtinchalik papkaga yozilsin — loyiha papkasi toza qolsin
+import { mkdtempSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+const PHOTOS = mkdtempSync(join(tmpdir(), "umra-photos-"));
+process.env.PHOTOS_DIR = PHOTOS;
+
 const { handleUpdate, processBatch } = await import("../src/bot.ts");
 const { Store } = await import("../src/store.ts");
 const { checkDigit, parseMrz } = await import("../src/mrz.ts");
@@ -33,16 +41,21 @@ function td3(o: {
   birth: string;
   sex: "M" | "F";
   expiry: string;
+  /** Hujjatni bergan davlat (standarti UZB) */
+  state?: string;
+  /** Fuqarolik (berilmasa `state` olinadi) */
+  nation?: string;
 }): string {
   const pad = (s: string, n: number) => (s + "<".repeat(n)).slice(0, n);
-  const l1 = pad(`P<UZB${o.surname}<<${o.given.replace(/ /g, "<")}`, 44);
+  const state = pad(o.state ?? "UZB", 3);
+  const l1 = pad(`P<${state}${o.surname}<<${o.given.replace(/ /g, "<")}`, 44);
 
   const doc = pad(o.docNumber, 9);
   const personal = "<".repeat(14);
   const head =
     doc +
     checkDigit(doc) +
-    "UZB" +
+    pad(o.nation ?? o.state ?? "UZB", 3) +
     o.birth +
     checkDigit(o.birth) +
     o.sex +
@@ -52,6 +65,20 @@ function td3(o: {
     "0";
   const composite = head.slice(0, 10) + head.slice(13, 20) + head.slice(21, 43);
   return `${l1}\n${head}${checkDigit(composite)}`;
+}
+
+/** TD1 (ID karta) MRZ — to'g'ri tekshiruv raqamlari bilan. */
+function td1Id(): string {
+  const pad = (s: string, n: number) => (s + "<".repeat(n)).slice(0, n);
+  const doc = "D23145890";
+  const l1 = pad(`IDUZB${doc}${checkDigit(doc)}`, 30);
+  const head =
+    "850412" + checkDigit("850412") + "M" +
+    "310101" + checkDigit("310101") + "UZB" + "<".repeat(11);
+  const composite =
+    l1.slice(5, 30) + head.slice(0, 7) + head.slice(8, 15) + head.slice(18, 29);
+  const l3 = pad("ISMOILOV<<DAVRON", 30);
+  return [l1, head + checkDigit(composite), l3].join("\n");
 }
 
 function okResult(mrzText: string): ReadResult {
@@ -73,7 +100,12 @@ type Sent = { chatId: number; text: string };
 function makeDeps(reads: Record<string, ReadResult | "throw">) {
   const sent: Sent[] = [];
   const edits: Sent[] = [];
-  const documents: { name: string; caption: string; size: number }[] = [];
+  const documents: {
+    name: string;
+    caption: string;
+    size: number;
+    bytes?: Uint8Array;
+  }[] = [];
   const queued: { chatId: number; fileId: string }[] = [];
   let nextId = 1;
 
@@ -91,7 +123,7 @@ function makeDeps(reads: Record<string, ReadResult | "throw">) {
       bytes: Uint8Array<ArrayBuffer>,
       caption = "",
     ) {
-      documents.push({ name, caption, size: bytes.length });
+      documents.push({ name, caption, size: bytes.length, bytes });
     },
     async download(fileId: string) {
       return { bytes: new Uint8Array(8) as Uint8Array<ArrayBuffer>, mime: "image/jpeg" };
@@ -463,6 +495,172 @@ test("bazadagi xodim .env siz ham ishlaydi", async () => {
   store.addOperator(444);
   await handleUpdate(photoUpdate(444, "f1"), deps as never);
   assert.deepEqual(queued, [{ chatId: 444, fileId: "f1" }]);
+  store.close();
+});
+
+// --- Rasm saqlash va zip arxiv ---
+
+test("rasm familiya_ism_turi nomi bilan saqlanadi", async () => {
+  const uzb = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1111111",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, store } = makeDeps({ f1: okResult(uzb) });
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const row = store.all()[0];
+  assert.equal(row.photo_file, "umra-mart/KARIMOV_AZIZ_uzb-pasport.jpg");
+  assert.ok(existsSync(join(PHOTOS, row.photo_file!)), "fayl diskda bo'lishi kerak");
+
+  // Hujjat turi ham yozilgan
+  assert.equal(row.doc_kind, "pasport");
+  assert.equal(row.doc_country, "O'zbekiston");
+  assert.equal(row.doc_label, "O'zbek pasporti");
+  store.close();
+});
+
+test("tojik/qirg'iz/qozoq hujjatlari ajratiladi", async () => {
+  const reads: Record<string, ReturnType<typeof okResult>> = {};
+  const expected: [string, string, string][] = [
+    ["TJK", "Tojik pasporti", "tjk-pasport"],
+    ["KGZ", "Qirg'iz pasporti", "kgz-pasport"],
+    ["KAZ", "Qozoq pasporti", "kaz-pasport"],
+  ];
+  expected.forEach(([code], i) => {
+    reads[`f${i}`] = okResult(
+      td3({
+        surname: `FAMILIYA${i}`, given: "ISM", docNumber: `AB222222${i}`,
+        birth: "850412", sex: "M", expiry: "310101", state: code, nation: code,
+      }),
+    );
+  });
+
+  const { deps, store } = makeDeps(reads);
+  await processBatch(OPERATOR, ["f0", "f1", "f2"], deps as never);
+
+  const rows = store.all().sort((a, b) => a.surname.localeCompare(b.surname));
+  assert.equal(rows.length, 3);
+  expected.forEach(([, label, slug], i) => {
+    assert.equal(rows[i].doc_label, label);
+    assert.ok(rows[i].photo_file!.endsWith(`_${slug}.jpg`), rows[i].photo_file!);
+  });
+  store.close();
+});
+
+test("ID karta pasportdan ajratiladi", async () => {
+  const { deps, store } = makeDeps({ f1: okResult(td1Id()) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const row = store.all()[0];
+  assert.equal(row.doc_kind, "id");
+  assert.equal(row.doc_label, "O'zbek ID kartasi");
+  assert.ok(row.photo_file!.includes("uzb-id"), row.photo_file!);
+  store.close();
+});
+
+test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
+  const a = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB3333333",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const b = td3({
+    surname: "SALIMOVA", given: "NARGIZA", docNumber: "AB4444444",
+    birth: "900707", sex: "F", expiry: "320202",
+  });
+  const { deps, documents, store } = makeDeps({ f1: okResult(a), f2: okResult(b) });
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
+  await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+  await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
+
+  assert.equal(documents.length, 1, "arxiv yuborilishi kerak");
+  const doc = documents[0];
+  assert.match(doc.name, /^umra-mart-\d{4}-\d{2}-\d{2}\.zip$/);
+  assert.match(doc.caption, /\*2\* rasm/);
+  assert.match(doc.caption, /\*2\* kishi/);
+
+  // Arxivni HAQIQIY unzip bilan ochib tekshiramiz
+  const dir = mkdtempSync(join(tmpdir(), "umra-zip-"));
+  const path = join(dir, "a.zip");
+  writeFileSync(path, doc.bytes!);
+  execFileSync("unzip", ["-t", path], { stdio: "pipe" });
+  execFileSync("unzip", ["-qq", "-o", path, "-d", join(dir, "out")], { stdio: "pipe" });
+
+  const inside = readdirSync(join(dir, "out", "umra-mart")).sort();
+  assert.deepEqual(inside, [
+    "KARIMOV_AZIZ_uzb-pasport.jpg",
+    "SALIMOVA_NARGIZA_uzb-pasport.jpg",
+    "umra-hujjatlar-umra-mart-2026-09-29.xlsx",
+  ]);
+  store.close();
+});
+
+test("yozuv o'chirilsa rasmi ham o'chadi", async () => {
+  const mrz = td3({
+    surname: "TOSHEV", given: "BOBUR", docNumber: "AB5555555",
+    birth: "880101", sex: "M", expiry: "310101",
+  });
+  const { deps, store } = makeDeps({ f1: okResult(mrz) });
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Sinov"), deps as never);
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const file = store.all()[0].photo_file!;
+  assert.ok(existsSync(join(PHOTOS, file)));
+
+  await handleUpdate(textUpdate(OPERATOR, "/ochir AB5555555"), deps as never);
+  assert.equal(store.count(), 0);
+  assert.ok(!existsSync(join(PHOTOS, file)), "rasm ham o'chishi kerak");
+  store.close();
+});
+
+test("guruh o'chirilsa butun papka ketadi", async () => {
+  const mrz = td3({
+    surname: "USMONOV", given: "JAHON", docNumber: "AB6666666",
+    birth: "880101", sex: "M", expiry: "310101",
+  });
+  const { deps, store } = makeDeps({ f1: okResult(mrz) });
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Ketadi"), deps as never);
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  assert.ok(existsSync(join(PHOTOS, "ketadi")));
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruhni_ochir Ketadi"), deps as never);
+  assert.equal(store.count(), 0);
+  assert.ok(!existsSync(join(PHOTOS, "ketadi")), "papka ham o'chishi kerak");
+  store.close();
+});
+
+test("bir xil ismli ikki kishining rasmi almashmaydi", async () => {
+  // Ikki xil pasport, bir xil ism-familiya
+  const first = td3({
+    surname: "ALIYEV", given: "SARDOR", docNumber: "AB7777777",
+    birth: "800101", sex: "M", expiry: "310101",
+  });
+  const second = td3({
+    surname: "ALIYEV", given: "SARDOR", docNumber: "AB8888888",
+    birth: "850505", sex: "M", expiry: "310101",
+  });
+  const { deps, store } = makeDeps({ f1: okResult(first), f2: okResult(second) });
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Egizak"), deps as never);
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await processBatch(OPERATOR, ["f2"], deps as never);
+
+  const files = store.all().map((r) => r.photo_file);
+  assert.equal(new Set(files).size, 2, `yo'llar bir xil bo'lib qoldi: ${files}`);
+  for (const f of files) assert.ok(existsSync(join(PHOTOS, f!)), `yo'q: ${f}`);
+  store.close();
+});
+
+test("bo'sh guruhda /zip arxiv yubormaydi", async () => {
+  const { deps, documents, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Bosh"), deps as never);
+  await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
+  assert.equal(documents.length, 0);
+  assert.match(sent.at(-1)!.text, /yozuv yo'q/);
   store.close();
 });
 

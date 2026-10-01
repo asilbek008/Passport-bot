@@ -94,6 +94,8 @@ export const t = {
     "`/royxat` — joriy guruhdagi kishilar",
     "`/excel` — joriy guruhni Excel qilib olish",
     "`/excel hammasi` — barcha guruhlarni bitta faylda",
+    "`/zip` — rasmlar + Excel bitta arxivda",
+    "`/zip hammasi` — barcha guruhlar arxivda",
     "`/ogohlik` — pasporti tez tugaydiganlar",
     "`/ochir <pasport raqami>` — bitta yozuvni o'chirish",
     "`/guruhni_ochir <nom>` — butun guruhni o'chirish",
@@ -156,10 +158,48 @@ export const t = {
     givenNames: string;
     documentNumber: string;
     expiryDate: string;
+    docLabel: string;
     fresh: boolean;
   }) =>
     `${p.fresh ? "✅" : "♻️"} ${esc(p.surname)} ${esc(p.givenNames)} — \`${p.documentNumber}\`` +
+    ` · ${esc(p.docLabel)}` +
     (p.fresh ? "" : " _(yangilandi)_"),
+
+  // --- Zip arxiv ---
+
+  zipCaption: (p: {
+    photos: number;
+    people: number;
+    missing: string[];
+    sizeMb: number;
+  }) => {
+    const lines = [
+      `*${p.photos}* rasm · *${p.people}* kishi · ${p.sizeMb.toFixed(1)} MB`,
+      "",
+      "Arxiv ichida: har bir hujjat rasmi (nomi — familiya, ism va hujjat turi)",
+      "va Excel jadval.",
+    ];
+    if (p.missing.length > 0) {
+      lines.push(
+        "",
+        `⚠️ Rasmi topilmaganlar (${p.missing.length}): ${p.missing.slice(0, 10).join(", ")}` +
+          (p.missing.length > 10 ? "…" : ""),
+        "_Ularning ma'lumoti jadvalda bor, faqat rasmi yo'q._",
+      );
+    }
+    return lines.join("\n");
+  },
+
+  zipTooBig: (sizeMb: number, maxMb: number) =>
+    [
+      `Arxiv juda katta: ${sizeMb.toFixed(1)} MB (chegara ${maxMb} MB).`,
+      "",
+      "Telegram bot bundan kattasini yubora olmaydi. Yechimlari:",
+      "• guruhlarga bo'lib oling — `/zip` joriy guruhni beradi",
+      "• `.env` dagi `ZIP_MAX_MB` ni oshiring (Telegram chegarasi 50 MB)",
+      "",
+      `Rasm fayllari papkada ham turadi: \`${config.photosDir}\``,
+    ].join("\n"),
 
   failLine: (index: number, why: string) => `❌ ${index}-rasm — ${why}`,
 

@@ -29,6 +29,10 @@ function row(over: Partial<Pilgrim> = {}): Pilgrim {
     place_of_birth: "QIZIRIQ",
     authority: "IIB",
     mrz_format: "TD3",
+    doc_kind: "pasport",
+    doc_country: "O'zbekiston",
+    doc_label: "O'zbek pasporti",
+    photo_file: "umra-mart/KARIMOV_AZIZ_uzb-pasport.jpg",
     created_at: "2026-09-29 10:00:00",
     ...over,
   };
