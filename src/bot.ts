@@ -16,6 +16,7 @@ import { monthsUntilExpiry, failedFields } from "./mrz.ts";
 import { splitMessage } from "./batch.ts";
 import { buildWorkbook, workbookName, workbookCaption, passportState } from "./excel.ts";
 import { documentType, photoBaseName } from "./document-type.ts";
+import { parseVisaType, type VisaType } from "./visa.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
 import {
   savePhoto,
@@ -226,6 +227,86 @@ async function handleCommand(
       return;
     }
 
+    // --- Viza ---
+
+    case "viza": {
+      // `/viza AB1234567 umra 2027-03-15`
+      const [doc, typeWord, ...rest] = argument.split(/\s+/).filter(Boolean);
+      if (!doc || !typeWord) {
+        await reply(tg, chatId, t.visaUsage());
+        return;
+      }
+
+      const type = parseVisaType(typeWord);
+      if (!type) {
+        await reply(tg, chatId, t.visaUnknownType(typeWord));
+        return;
+      }
+
+      // Ixtiyoriy: muddat va raqam
+      let expiry: string | null = null;
+      let number: string | null = null;
+      for (const word of rest) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(word)) expiry = word;
+        else number = word;
+      }
+
+      const updated = store.setVisaByDocNumber(doc.toUpperCase().replace(/\s+/g, ""), {
+        type,
+        number,
+        expiry,
+        source: "qolda",
+      });
+      if (!updated) {
+        await tg.sendMessage(chatId, t.notFound(doc.toUpperCase()));
+        return;
+      }
+      await reply(tg, chatId, t.visaSet(updated, now));
+      return;
+    }
+
+    case "vizani_ochir": {
+      if (!argument) {
+        await tg.sendMessage(chatId, t.needDocNumber);
+        return;
+      }
+      const doc = argument.toUpperCase().replace(/\s+/g, "");
+      const changed = store.clearVisa(doc);
+      await tg.sendMessage(
+        chatId,
+        changed > 0 ? t.visaCleared(doc) : t.notFound(doc),
+      );
+      return;
+    }
+
+    case "vizasiz": {
+      const missing = store.withoutVisa(group || undefined);
+      const total = store.count(group || undefined);
+      if (missing.length === 0) {
+        await tg.sendMessage(chatId, t.allHaveVisa(total));
+        return;
+      }
+      await reply(
+        tg,
+        chatId,
+        t.withoutVisa(
+          missing.map((p) => `${esc(p.surname)} ${esc(p.given_names)} — \`${p.doc_number}\``),
+          total,
+        ),
+      );
+      return;
+    }
+
+    case "vizalar": {
+      const rows = store.all(group || undefined);
+      if (rows.length === 0) {
+        await tg.sendMessage(chatId, t.emptyList(group));
+        return;
+      }
+      await reply(tg, chatId, t.visaList(rows, now));
+      return;
+    }
+
     case "zip": {
       const wantAll = /^(hammasi|all|barcha)$/i.test(argument);
       const scope = wantAll ? undefined : group || undefined;
@@ -390,6 +471,9 @@ export async function processBatch(
   /** Shu guruhda allaqachon egallangan rasm yo'llari (nom to'qnashuvi uchun) */
   const takenPaths = new Set(store.photoPaths(group || undefined));
   let photoProblems = 0;
+  /** Viza yorliqlari — pasportlardan alohida hisobot beriladi */
+  const visaOk: string[] = [];
+  const visaProblems: string[] = [];
 
   for (let i = 0; i < fileIds.length; i++) {
     // Progressni har 3 rasmda yangilaymiz — har birida yangilash
@@ -429,6 +513,47 @@ export async function processBatch(
 
     // Hujjat turi va davlati MRZ'dan — taxmin yo'q
     const type = documentType(mrz);
+
+    // VIZA YORLIG'I: pasport emas, alohida ishlanadi.
+    // Viza MRZ'ida pasport raqami yo'q, shuning uchun odamga ism,
+    // tug'ilgan sana bo'yicha bog'lanadi.
+    if (type.kind === "viza") {
+      const found = store.setVisaByIdentity(
+        {
+          surname: mrz.surname,
+          givenNames: mrz.givenNames,
+          birthDate: mrz.birthDate,
+        },
+        {
+          // Turi vizaning ko'rinadigan qismida — tekshiruv raqami yo'q
+          type: extra.visaType,
+          number: mrz.documentNumber,
+          expiry: mrz.expiryDate,
+          source: "mrz",
+        },
+      );
+
+      if (found.length === 1 && found[0].visa_source === "mrz") {
+        visaOk.push(
+          t.visaAttached({
+            surname: mrz.surname,
+            givenNames: mrz.givenNames,
+            number: mrz.documentNumber,
+            expiry: mrz.expiryDate,
+            type: extra.visaType,
+          }),
+        );
+      } else if (found.length === 0) {
+        visaProblems.push(
+          t.visaNoOwner(i + 1, `${esc(mrz.surname)} ${esc(mrz.givenNames)}`),
+        );
+      } else {
+        visaProblems.push(
+          t.visaAmbiguous(i + 1, `${esc(mrz.surname)} ${esc(mrz.givenNames)}`),
+        );
+      }
+      continue;
+    }
 
     // Rasm fayli odam o'qiydigan nom bilan saqlanadi.
     // Bir xil ismli ikki kishi bo'lsa, ikkinchisiga pasport raqami qo'shiladi.
@@ -511,6 +636,8 @@ export async function processBatch(
     ok,
     failed,
     warnings,
+    visaOk,
+    visaProblems,
     group,
     total: fileIds.length,
   });
@@ -531,6 +658,8 @@ type Outcome =
         issueDate: string | null;
         placeOfBirth: string | null;
         authority: string | null;
+        /** Viza yorlig'i bo'lsa — turi (MRZ'da yo'q, tasdiqlanmagan) */
+        visaType: VisaType | null;
       };
       /** Rasmning o'zi — diskka saqlash uchun kerak */
       image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
@@ -566,6 +695,7 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
           issueDate: result.issueDate,
           placeOfBirth: result.placeOfBirth,
           authority: result.authority,
+          visaType: result.visaType,
         },
         image,
       };

@@ -159,6 +159,10 @@ O'qilmadi (2) — qaytadan suratga oling:
 | `/excel hammasi` | Barcha guruhlarni bitta faylda |
 | `/zip` | Joriy guruh: rasmlar + Excel bitta arxivda |
 | `/zip hammasi` | Barcha guruhlar arxivda (har biri o'z papkasida) |
+| `/viza <pasport> <turi>` | Viza belgilaydi |
+| `/vizalar` | Kimda qanday viza bor |
+| `/vizasiz` | Vizasi belgilanmaganlar |
+| `/vizani_ochir <pasport>` | Viza ma'lumotini olib tashlaydi |
 | `/ogohlik` | Pasporti tez tugaydiganlar |
 | `/ochir AB1234567` | Bitta yozuvni o'chiradi |
 | `/guruhni_ochir Umra mart` | Butun guruhni o'chiradi |
@@ -171,7 +175,8 @@ O'qilmadi (2) — qaytadan suratga oling:
 
 Guruh, **Familiya**, **Ism**, **Hujjat turi**, **Davlat**, Jinsi, Tug'ilgan
 sana, Fuqaroligi, Kod, Pasport raqami, Berilgan sana, Amal muddati,
-**Qolgan (oy)**, JSHSHIR, Tug'ilgan joy, Kim bergan, Qabul qilingan vaqt, Izoh.
+**Qolgan (oy)**, **Viza**, **Viza raqami**, **Viza muddati**, **Viza manbasi**,
+JSHSHIR, Tug'ilgan joy, Kim bergan, Qabul qilingan vaqt, Izoh.
 
 **Qizil qator** — pasport muddati tugagan. **Sariq qator** — `MIN_PASSPORT_MONTHS`
 (standart 6) oydan kam qolgan. Shunda faylni ochishingiz bilan kimga
@@ -208,6 +213,74 @@ chegarasi 50 MB. Bunda guruhlarga bo'lib oling.
 - telefonni qiyshaytirmasdan, to'g'ri ushlab
 
 ---
+
+## Viza
+
+Bot 50 kishilik guruhda **kimda viza bor, kimda yo'q** va **qaysi turi** ekanini
+kuzatadi. Ma'lumot ikki yo'l bilan kiradi:
+
+### 1. Viza yorlig'ining rasmi (tavsiya etiladi)
+
+Pasportga yopishtirilgan vizada ham **MRZ bor** (ICAO 9303 7-qism, MRV-A 2×44
+yoki MRV-B 2×36) va unda tekshiruv raqamlari bor. Viza sahifasining rasmini
+yuborsangiz bot:
+
+- **viza raqamini**, **egasining ismini**, **fuqaroligini** va **amal muddatini**
+  MRZ'dan ishonchli o'qiydi — xuddi pasport kabi, tekshiruv raqami bilan;
+- egasini ism va tug'ilgan sana bo'yicha ro'yxatdan topib, o'zi belgilaydi
+  (viza MRZ'ida pasport raqami **yo'q**, shuning uchun moslashtirish shu
+  uchlik bo'yicha);
+- viza **turini** (umra / single / multiple) vizaning ko'rinadigan qismidan
+  o'qiydi. Bu MRZ'da standart maydon emas, shuning uchun **tasdiqlanmagan**
+  deb belgilanadi — tekshiruv raqami bilan himoyalangan ma'lumot bilan
+  aralashtirilmaydi.
+
+Egasi ro'yxatda bo'lmasa, bot ogohlantiradi va **yangi odam yaratmaydi** —
+avval pasportini yuborish kerak.
+
+### 2. Qo'lda kiritish
+
+```
+/viza AB1234567 umra
+/viza AB1234567 umra 2027-03-15
+/viza AB1234567 single 2027-03-15 1234567890
+```
+
+Turlari: `umra`, `hajj`, `single`, `multiple`, `tranzit`, `ishchi`, `boshqa`.
+O'zbek, ingliz va rus atamalari qabul qilinadi (`Umrah`, `УМРА`, `SINGLE ENTRY`,
+`ko'p`…). Tanilmagan so'z **rad etiladi** — xato viza turi safar hujjatlarini
+buzadi, shuning uchun taxmin qilinmaydi.
+
+| Buyruq | Nima qiladi |
+|---|---|
+| `/vizalar` | Kimda qanday viza bor (muddati tugaydiganlar belgilanadi) |
+| `/vizasiz` | Vizasi hali belgilanmaganlar |
+| `/vizani_ochir <pasport>` | Xato kiritilgan vizani olib tashlaydi |
+
+Excelda to'rt ustun qo'shiladi: **Viza**, **Viza raqami**, **Viza muddati**,
+**Viza manbasi** (`viza rasmi` yoki `qo'lda`) — oxirgisi qaysi ma'lumotga
+qanchalik ishonish mumkinligini ko'rsatadi.
+
+### visa.mofa.gov.sa haqida — nega avtomatlashtirilmagan
+
+Saudiya MOFA saytidagi so'rov formasida **CAPTCHA** bor va
+[rasmiy tavsifda](https://my.gov.sa/en/services/375108) uning maqsadi aniq
+yozilgan: avtomatik murojaatlarning oldini olish. Ochiq API ham yo'q.
+
+Shuning uchun bot u saytga **o'zi kirmaydi**. Buning ikki sababi bor:
+
+1. CAPTCHA'ni chetlab o'tish — sayt egasi ataylab qo'ygan himoyani buzish;
+2. bunday yechim ishonchsiz: sayt har o'zgarganda buzilib turadi, va 50
+   kishilik guruhni avtomatik so'rov qilish bloklanishga olib keladi.
+
+Amalda bu sizga qulaysizlik tug'dirmaydi: siz MOFA saytida **o'zingiz**
+tekshirasiz (odatdagi ishingiz), natijani botga bir buyruq bilan yozasiz —
+va keyin butun guruhni bot kuzatadi. Yoki viza chiqqach uning rasmini
+yuborasiz, bot qolganini o'zi qiladi.
+
+Agar siz **litsenziyali umra operatori** bo'lsangiz, Nusuk Masar / eHaj
+tizimida operator hisobingiz bor — guruh holatini rasmiy ravishda **o'sha
+yerdan** olish eng ishonchli yo'l, chunki u MOFA ma'lumotining asl manbasi.
 
 ## Maxfiylik
 
@@ -256,6 +329,7 @@ src/
   document-type.ts  Hujjat turi va davlat (MRZ'dan, determinlashgan)
   photos.ts     Rasm fayllarini saqlash/o'chirish
   zip.ts        ZIP arxiv tuzish (zlib bilan, kutubxonasiz)
+  visa.ts       Viza turi va holatini kuzatish
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
   bot.ts        Suhbat mantig'i (bog'liqliklar tashqaridan — testdan o'tadi)
   telegram.ts   Bot API (faqat fetch, SDK'siz)
@@ -272,7 +346,7 @@ scripts/
 Tekshirish:
 
 ```bash
-npm test         # 121 test
+npm test         # 136 test
 npm run typecheck
 ```
 

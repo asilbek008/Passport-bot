@@ -33,6 +33,11 @@ function row(over: Partial<Pilgrim> = {}): Pilgrim {
     doc_country: "O'zbekiston",
     doc_label: "O'zbek pasporti",
     photo_file: "umra-mart/KARIMOV_AZIZ_uzb-pasport.jpg",
+    visa_type: null,
+    visa_number: null,
+    visa_expiry: null,
+    visa_source: null,
+    visa_checked_at: null,
     created_at: "2026-09-29 10:00:00",
     ...over,
   };

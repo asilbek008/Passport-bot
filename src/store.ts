@@ -38,10 +38,34 @@ export type Pilgrim = {
   doc_label: string;
   /** Rasm fayli: `<guruh>/<FAMILIYA_ISM_turi>.jpg`. Yo'q bo'lsa null. */
   photo_file: string | null;
+  /** "umra" | "single" | "multiple" … Viza yo'q bo'lsa null. */
+  visa_type: string | null;
+  /** Viza raqami (MRZ'dan yoki qo'lda) */
+  visa_number: string | null;
+  /** Viza amal muddati, ISO sana */
+  visa_expiry: string | null;
+  /** "mrz" — tekshiruv raqamlari bilan tasdiqlangan; "qolda" — xodim yozgan */
+  visa_source: string | null;
+  /** Qachon belgilangani */
+  visa_checked_at: string | null;
   created_at: string;
 };
 
-export type NewPilgrim = Omit<Pilgrim, "id" | "created_at">;
+/**
+ * Yangi yozuv. Viza maydonlari bu yerda yo'q: ular keyin, alohida
+ * belgilanadi (`setVisa*`). Pasport rasmi qayta yuborilsa ham viza
+ * ma'lumoti saqlanib qoladi — `save()` ularga tegmaydi.
+ */
+export type NewPilgrim = Omit<
+  Pilgrim,
+  | "id"
+  | "created_at"
+  | "visa_type"
+  | "visa_number"
+  | "visa_expiry"
+  | "visa_source"
+  | "visa_checked_at"
+>;
 
 /**
  * `save()` natijasi.
@@ -155,6 +179,11 @@ export class Store {
       doc_country: "text not null default ''",
       doc_label: "text not null default ''",
       photo_file: "text",
+      visa_type: "text",
+      visa_number: "text",
+      visa_expiry: "text",
+      visa_source: "text",
+      visa_checked_at: "text",
     };
 
     for (const [name, definition] of Object.entries(wanted)) {
@@ -296,6 +325,121 @@ export class Store {
         : null;
 
     return { state: before === undefined ? "inserted" : "updated", previousPhoto };
+  }
+
+  // --- Viza ---
+
+  /**
+   * Vizani pasport raqami bo'yicha belgilaydi.
+   * `null` qaytsa — bunday pasport topilmadi.
+   */
+  setVisaByDocNumber(
+    docNumber: string,
+    visa: {
+      type: string;
+      number?: string | null;
+      expiry?: string | null;
+      source: string;
+    },
+  ): Pilgrim | null {
+    const info = this.db
+      .prepare(
+        `update pilgrims set
+           visa_type = ?, visa_number = ?, visa_expiry = ?,
+           visa_source = ?, visa_checked_at = datetime('now')
+         where doc_number = ?`,
+      )
+      .run(
+        visa.type,
+        visa.number ?? null,
+        visa.expiry ?? null,
+        visa.source,
+        docNumber,
+      );
+    if (Number(info.changes) === 0) return null;
+    return (this.db
+      .prepare("select * from pilgrims where doc_number = ?")
+      .get(docNumber) as unknown as Pilgrim) ?? null;
+  }
+
+  /**
+   * Vizani ism va tug'ilgan sana bo'yicha belgilaydi — viza yorlig'ining
+   * MRZ'ida pasport raqami YO'Q, shuning uchun moslashtirish shu uchlik
+   * bo'yicha bo'ladi.
+   */
+  setVisaByIdentity(
+    who: { surname: string; givenNames: string; birthDate: string },
+    visa: {
+      type: string | null;
+      number?: string | null;
+      expiry?: string | null;
+      source: string;
+    },
+  ): Pilgrim[] {
+    const matches = this.db
+      .prepare(
+        `select * from pilgrims
+         where upper(surname) = upper(?) and upper(given_names) = upper(?)
+           and birth_date = ?`,
+      )
+      .all(who.surname, who.givenNames, who.birthDate) as unknown as Pilgrim[];
+
+    // Bir nechta mos kelsa hech narsa o'zgartirmaymiz — xodim hal qiladi
+    if (matches.length !== 1) return matches;
+
+    this.db
+      .prepare(
+        `update pilgrims set
+           visa_type = coalesce(?, visa_type),
+           visa_number = coalesce(?, visa_number),
+           visa_expiry = coalesce(?, visa_expiry),
+           visa_source = ?, visa_checked_at = datetime('now')
+         where id = ?`,
+      )
+      .run(
+        visa.type,
+        visa.number ?? null,
+        visa.expiry ?? null,
+        visa.source,
+        matches[0].id,
+      );
+
+    return [
+      this.db
+        .prepare("select * from pilgrims where id = ?")
+        .get(matches[0].id) as unknown as Pilgrim,
+    ];
+  }
+
+  /** Vizani olib tashlaydi (xato kiritilgan bo'lsa). */
+  clearVisa(docNumber: string): number {
+    const info = this.db
+      .prepare(
+        `update pilgrims set visa_type = null, visa_number = null,
+           visa_expiry = null, visa_source = null, visa_checked_at = null
+         where doc_number = ?`,
+      )
+      .run(docNumber);
+    return Number(info.changes);
+  }
+
+  /** Vizasi belgilanmaganlar. */
+  withoutVisa(group?: string): Pilgrim[] {
+    return (
+      group
+        ? this.db
+            .prepare(
+              `select * from pilgrims where group_label = ? and visa_type is null
+               order by surname, given_names`,
+            )
+            .all(group)
+        : this.db
+            .prepare(
+              `select * from pilgrims where visa_type is null
+               order by group_label, surname, given_names`,
+            )
+            .all()
+    ) as unknown as Pilgrim[];
   }
 
   /** Guruhdagi (yoki hamma) yozuvlarning rasm yo'llari. */

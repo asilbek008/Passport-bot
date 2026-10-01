@@ -33,6 +33,25 @@ test("JSON atrofidagi ortiqcha matn tashlab yuboriladi", () => {
   assert.equal(r.data!.place_of_birth, "QIZIRIQ");
 });
 
+test("viza turi yozilmasa ham pasport o'qiladi", () => {
+  // Model bu maydonni unutsa, butun o'qish buzilmasligi kerak
+  const r = parseJson(JSON.stringify(good));
+  assert.equal(r.success, true);
+  assert.equal(r.data!.visa_type ?? null, null);
+
+  // Viza bo'lsa — turi bilan
+  const visa = { ...good, document_kind: "visa", visa_type: "umra" };
+  const v = parseJson(JSON.stringify(visa));
+  assert.equal(v.success, true);
+  assert.equal(v.data!.document_kind, "visa");
+  assert.equal(v.data!.visa_type, "umra");
+});
+
+test("noto'g'ri viza turi rad etiladi", () => {
+  const bad = { ...good, document_kind: "visa", visa_type: "nimadir" };
+  assert.equal(parseJson(JSON.stringify(bad)).success, false);
+});
+
 test("buzilgan yoki yetishmayotgan javob rad etiladi", () => {
   assert.equal(parseJson("shunchaki matn").success, false);
   assert.equal(parseJson("").success, false);

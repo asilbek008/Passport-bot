@@ -8,6 +8,13 @@
 
 import { config } from "./config.ts";
 import type { Pilgrim } from "./store.ts";
+import {
+  VISA_LABELS,
+  VISA_ICON,
+  visaState,
+  visaTypeHelp,
+  type VisaType,
+} from "./visa.ts";
 
 /** Markdown'da maxsus belgilarni zararsizlantirish (ism ichida `_` bo'lishi mumkin). */
 export function esc(s: string): string {
@@ -96,6 +103,12 @@ export const t = {
     "`/excel hammasi` — barcha guruhlarni bitta faylda",
     "`/zip` — rasmlar + Excel bitta arxivda",
     "`/zip hammasi` — barcha guruhlar arxivda",
+    "",
+    "*Viza:*",
+    "`/viza <pasport> <turi>` — viza belgilash (yoki viza rasmini yuboring)",
+    "`/vizalar` — kimda qanday viza bor",
+    "`/vizasiz` — vizasi yo'qlar",
+    "`/vizani_ochir <pasport>` — viza ma'lumotini olib tashlash",
     "`/ogohlik` — pasporti tez tugaydiganlar",
     "`/ochir <pasport raqami>` — bitta yozuvni o'chirish",
     "`/guruhni_ochir <nom>` — butun guruhni o'chirish",
@@ -165,6 +178,102 @@ export const t = {
     ` · ${esc(p.docLabel)}` +
     (p.fresh ? "" : " _(yangilandi)_"),
 
+  // --- Viza ---
+
+  visaUsage: () =>
+    [
+      "*Viza belgilash:*",
+      "",
+      "`/viza AB1234567 umra`",
+      "`/viza AB1234567 umra 2027-03-15`  ← muddati bilan",
+      "`/viza AB1234567 single 2027-03-15 1234567890`  ← raqami bilan",
+      "",
+      `Turlari: ${visaTypeHelp()}`,
+      "",
+      "Yoki *viza yopishtirilgan sahifaning rasmini* yuboring — bot uning",
+      "MRZ'ini o'qib, egasini ism bo'yicha topadi va o'zi belgilaydi.",
+      "",
+      "Boshqa buyruqlar: /vizasiz · /vizalar · `/vizani_ochir <pasport>`",
+    ].join("\n"),
+
+  visaUnknownType: (word: string) =>
+    [
+      `\`${esc(word)}\` — bunday viza turi tanilmadi.`,
+      "",
+      `Mumkin bo'lganlari: ${visaTypeHelp()}`,
+      "",
+      "Taxmin qilmadim — xato tur safar hujjatlarini buzadi.",
+    ].join("\n"),
+
+  visaSet: (p: Pilgrim, today: Date) => {
+    const lines = [
+      `✅ Viza belgilandi: *${esc(p.surname)} ${esc(p.given_names)}*`,
+      "",
+      `Turi: ${VISA_LABELS[(p.visa_type ?? "boshqa") as VisaType]}`,
+    ];
+    if (p.visa_number) lines.push(`Raqami: \`${p.visa_number}\``);
+    if (p.visa_expiry) {
+      lines.push(`Muddati: ${p.visa_expiry}`);
+      const state = visaState(p.visa_expiry, today);
+      if (state === "expired") lines.push("", "🔴 *Diqqat:* viza muddati tugagan.");
+      else if (state === "soon") lines.push("", "🟡 *Diqqat:* vizaga 30 kundan kam qoldi.");
+    }
+    lines.push("", "_Qo'lda kiritildi — manba: siz._");
+    return lines.join("\n");
+  },
+
+  visaCleared: (doc: string) => `\`${doc}\` — viza ma'lumoti olib tashlandi.`,
+
+  allHaveVisa: (total: number) =>
+    `Hammaning vizasi belgilangan (${total} kishi). 👍`,
+
+  withoutVisa: (lines: string[], total: number) =>
+    [
+      `*Vizasi belgilanmaganlar: ${lines.length} / ${total}*`,
+      "",
+      ...lines,
+      "",
+      "Belgilash: `/viza <pasport> <turi>` yoki viza sahifasining rasmini yuboring.",
+    ].join("\n"),
+
+  visaList: (rows: Pilgrim[], today: Date) => {
+    const lines = rows.map((p) => {
+      if (!p.visa_type) return `⬜️ ${esc(p.surname)} ${esc(p.given_names)} — viza yo'q`;
+      const type = p.visa_type as VisaType;
+      const state = visaState(p.visa_expiry, today);
+      const mark = state === "expired" ? " 🔴" : state === "soon" ? " 🟡" : "";
+      const source = p.visa_source === "mrz" ? "" : " _(qo'lda)_";
+      return (
+        `${VISA_ICON[type] ?? "📄"} ${esc(p.surname)} ${esc(p.given_names)} — ` +
+        `${VISA_LABELS[type] ?? p.visa_type}` +
+        (p.visa_expiry ? ` · ${p.visa_expiry}${mark}` : "") +
+        source
+      );
+    });
+    const withVisa = rows.filter((p) => p.visa_type).length;
+    return [`*Vizalar: ${withVisa} / ${rows.length}*`, "", ...lines].join("\n");
+  },
+
+  /** Viza yorlig'i rasmdan o'qilib, egasiga bog'landi. */
+  visaAttached: (p: {
+    surname: string;
+    givenNames: string;
+    number: string;
+    expiry: string;
+    type: VisaType | null;
+  }) =>
+    `🛂 ${esc(p.surname)} ${esc(p.givenNames)} — viza \`${p.number}\`` +
+    (p.expiry ? ` · ${p.expiry}` : "") +
+    (p.type ? ` · ${VISA_LABELS[p.type]}` : " · _turi o'qilmadi_"),
+
+  visaNoOwner: (index: number, who: string) =>
+    `❓ ${index}-rasm — viza (${who}): bu odam ro'yxatda yo'q.` +
+    " _Avval pasportini yuboring._",
+
+  visaAmbiguous: (index: number, who: string) =>
+    `❓ ${index}-rasm — viza (${who}): bir nechta odam mos keldi,` +
+    " qo'lda belgilang (`/viza <pasport> <turi>`).",
+
   // --- Zip arxiv ---
 
   zipCaption: (p: {
@@ -209,17 +318,31 @@ export const t = {
     ok: string[];
     failed: string[];
     warnings: string[];
+    visaOk?: string[];
+    visaProblems?: string[];
     group: string;
     total: number;
   }) => {
     const out: string[] = [];
+    const visaOk = parts.visaOk ?? [];
+    const visaProblems = parts.visaProblems ?? [];
+    const read = parts.ok.length + visaOk.length;
+
     out.push(
-      `*Natija:* ${parts.ok.length} / ${parts.total} o'qildi` +
+      `*Natija:* ${read} / ${parts.total} o'qildi` +
         (parts.group ? ` · guruh: *${esc(parts.group)}*` : ""),
     );
 
     if (parts.ok.length > 0) {
       out.push("", ...parts.ok);
+    }
+
+    if (visaOk.length > 0) {
+      out.push("", "*Vizalar:*", ...visaOk);
+    }
+
+    if (visaProblems.length > 0) {
+      out.push("", ...visaProblems);
     }
 
     if (parts.warnings.length > 0) {

@@ -13,6 +13,7 @@ import writeXlsxFile from "write-excel-file/node";
 import type { Cell as XlsxCell } from "write-excel-file";
 import { config } from "./config.ts";
 import type { Pilgrim } from "./store.ts";
+import { VISA_LABELS, type VisaType } from "./visa.ts";
 
 /** Kutubxonaning katak tipi. */
 type Cell = XlsxCell;
@@ -32,6 +33,10 @@ const COLUMNS: { header: string; width: number }[] = [
   { header: "Berilgan", width: 13 },
   { header: "Amal muddati", width: 14 },
   { header: "Qolgan (oy)", width: 12 },
+  { header: "Viza", width: 20 },
+  { header: "Viza raqami", width: 15 },
+  { header: "Viza muddati", width: 14 },
+  { header: "Viza manbasi", width: 13 },
   { header: "JSHSHIR", width: 18 },
   { header: "Tug'ilgan joy", width: 22 },
   { header: "Kim bergan", width: 18 },
@@ -133,6 +138,26 @@ export async function buildWorkbook(
         type: Number,
         align: "center",
       }),
+      // Viza: belgilanmagan bo'lsa bo'sh emas, "yo'q" — xodim farqni
+      // ko'rishi kerak ("hali tekshirilmagan" va "vizasi yo'q" boshqa narsa)
+      paint(
+        text(
+          p.visa_type
+            ? (VISA_LABELS[p.visa_type as VisaType] ?? p.visa_type)
+            : "— belgilanmagan",
+        ),
+      ),
+      paint(text(p.visa_number)),
+      paint(text(p.visa_expiry)),
+      paint(
+        text(
+          p.visa_source === "mrz"
+            ? "viza rasmi"
+            : p.visa_source === "qolda"
+              ? "qo'lda"
+              : null,
+        ),
+      ),
       paint(text(p.personal_number)),
       paint(text(p.place_of_birth)),
       paint(text(p.authority)),

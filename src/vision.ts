@@ -20,6 +20,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "./config.ts";
 import { parseMrz, MrzError, type Mrz } from "./mrz.ts";
+import type { VisaType } from "./visa.ts";
 
 const ReadSchema = z.object({
   /** MRZ qatorlari — belgima-belgi, to'ldiruvchi '<' lar bilan */
@@ -28,9 +29,19 @@ const ReadSchema = z.object({
   issue_date: z.string().nullable(),
   place_of_birth: z.string().nullable(),
   authority: z.string().nullable(),
-  document_kind: z.enum(["passport", "id_card", "other", "not_a_document"]),
+  document_kind: z.enum(["passport", "id_card", "visa", "other", "not_a_document"]),
   mrz_readable: z.boolean(),
   problem: z.string().nullable(),
+  /**
+   * Viza yorlig'i bo'lsa — turi. MRZ'da standart maydon emas, vizaning
+   * ko'rinadigan qismidan o'qiladi, shuning uchun TASDIQLANMAGAN.
+   */
+  visa_type: z
+    .enum(["umra", "hajj", "single", "multiple", "tranzit", "ishchi", "boshqa"])
+    .nullable()
+    // Ixtiyoriy: model bu maydonni yozishni unutsa, pasportni o'qish
+    // butunlay buzilib ketmasligi kerak
+    .optional(),
 });
 
 const SYSTEM = `Sen hujjatdagi mashina o'qiydigan zonani (MRZ) ko'chirib yozadigan vositasan.
@@ -49,13 +60,26 @@ QAT'IY QOIDALAR:
 5. 0 va O, 1 va I ni diqqat bilan ajrat: MRZ da raqam va harf farq qiladi.
 6. Rasmda hujjat bo'lmasa — document_kind='not_a_document', mrz_lines=[].
 
+VIZA YORLIG'I: pasportga yopishtirilgan vizada ham MRZ bor (2 qator).
+Bunda document_kind='visa' va visa_type ni vizaning ko'rinadigan
+qismidan o'qi:
+  umra     — Umrah / عمرة
+  hajj     — Hajj / حج
+  single   — SINGLE ENTRY / bir martalik
+  multiple — MULTIPLE ENTRY / ko'p martalik
+  tranzit  — TRANSIT
+  ishchi   — WORK / employment
+Yozilmagan yoki ko'rinmasa visa_type=null. TAXMIN QILMA: viza turi
+MRZ'da tekshirilmaydi, shuning uchun noto'g'ri taxmin aniqlanmaydi.
+
 issue_date, place_of_birth va authority — MRZ da yo'q; ularni hujjatning
 ko'rinadigan qismidan o'qi, ko'rinmasa null qoldir (taxmin qilma).
 issue_date formati: yyyy-mm-dd.
 
 JAVOB SHAKLI: faqat JSON obyekt, boshqa hech qanday matn yoki izohsiz:
 {"mrz_lines":["...","..."],"issue_date":null,"place_of_birth":null,
-"authority":null,"document_kind":"passport","mrz_readable":true,"problem":null}`;
+"authority":null,"document_kind":"passport","mrz_readable":true,
+"problem":null,"visa_type":null}`;
 
 export type ReadResult =
   | {
@@ -64,6 +88,8 @@ export type ReadResult =
       issueDate: string | null;
       placeOfBirth: string | null;
       authority: string | null;
+      /** Viza yorlig'i bo'lsa — turi (tasdiqlanmagan, MRZ'da yo'q) */
+      visaType: VisaType | null;
     }
   | { ok: false; reason: "unreadable" | "not_a_document" | "refused"; problem: string }
   | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz }
@@ -189,6 +215,7 @@ export async function readDocument(
     issueDate: normalizeDate(out.issue_date),
     placeOfBirth: out.place_of_birth?.trim() || null,
     authority: out.authority?.trim() || null,
+    visaType: out.visa_type ?? null,
   };
 }
 

@@ -90,6 +90,7 @@ function okResult(mrzText: string): ReadResult {
     issueDate: "2020-01-02",
     placeOfBirth: "QIZIRIQ",
     authority: "IIB",
+    visaType: null,
   };
 }
 
@@ -661,6 +662,171 @@ test("bo'sh guruhda /zip arxiv yubormaydi", async () => {
   await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
   assert.equal(documents.length, 0);
   assert.match(sent.at(-1)!.text, /yozuv yo'q/);
+  store.close();
+});
+
+// --- Viza ---
+
+/** Viza yorlig'ining MRZ'i (MRV-A, 2×44). Pasport raqami yo'q — viza raqami. */
+function visaMrz(o: {
+  surname: string;
+  given: string;
+  visaNumber: string;
+  birth: string;
+  expiry: string;
+  nation?: string;
+}): string {
+  const pad = (s: string, n: number) => (s + "<".repeat(n)).slice(0, n);
+  const l1 = pad(`V<SAU${o.surname}<<${o.given.replace(/ /g, "<")}`, 44);
+  const num = pad(o.visaNumber, 9);
+  const head =
+    num + checkDigit(num) + pad(o.nation ?? "UZB", 3) +
+    o.birth + checkDigit(o.birth) + "M" +
+    o.expiry + checkDigit(o.expiry) + "<".repeat(14) + "0";
+  const composite = head.slice(0, 10) + head.slice(13, 20) + head.slice(21, 43);
+  return `${l1}\n${head}${checkDigit(composite)}`;
+}
+
+function visaResult(mrzText: string, type: string | null) {
+  const result = okResult(mrzText) as Record<string, unknown>;
+  result.visaType = type;
+  return result as never;
+}
+
+test("/viza qo'lda belgilaydi va turini tekshiradi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  // Tanilmagan tur — rad etiladi, taxmin qilinmaydi
+  await handleUpdate(textUpdate(OPERATOR, "/viza AB1234567 nimadir"), deps as never);
+  assert.match(sent.at(-1)!.text, /tanilmadi/);
+  assert.equal(store.all()[0].visa_type, null);
+
+  // To'g'ri tur
+  await handleUpdate(
+    textUpdate(OPERATOR, "/viza AB1234567 umra 2027-03-15"),
+    deps as never,
+  );
+  const row = store.all()[0];
+  assert.equal(row.visa_type, "umra");
+  assert.equal(row.visa_expiry, "2027-03-15");
+  assert.equal(row.visa_source, "qolda");
+  assert.match(sent.at(-1)!.text, /Umra vizasi/);
+  store.close();
+});
+
+test("/viza topilmagan pasportga yozmaydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/viza XX9999999 umra"), deps as never);
+  assert.match(sent.at(-1)!.text, /topilmadi/);
+  store.close();
+});
+
+test("viza rasmi egasiga o'zi bog'lanadi", async () => {
+  const passport = td3({
+    surname: "SALIMOVA", given: "NARGIZA", docNumber: "AB7654321",
+    birth: "900707", sex: "F", expiry: "320202",
+  });
+  const visa = visaMrz({
+    surname: "SALIMOVA", given: "NARGIZA", visaNumber: "V1234567",
+    birth: "900707", expiry: "270315",
+  });
+
+  const { deps, edits, store } = makeDeps({
+    f1: okResult(passport),
+    f2: visaResult(visa, "umra"),
+  });
+
+  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await processBatch(OPERATOR, ["f2"], deps as never);
+
+  const row = store.all()[0];
+  assert.equal(row.visa_number, "V1234567");
+  assert.equal(row.visa_expiry, "2027-03-15");
+  assert.equal(row.visa_type, "umra");
+  assert.equal(row.visa_source, "mrz", "MRZ'dan o'qilgani belgilanishi kerak");
+  // Faqat bitta yozuv — viza alohida odam bo'lib qo'shilmasligi kerak
+  assert.equal(store.count(), 1);
+  assert.match(edits.at(-1)!.text, /Vizalar/);
+  store.close();
+});
+
+test("egasi topilmagan viza ogohlantiradi, yozuv yaratmaydi", async () => {
+  const visa = visaMrz({
+    surname: "NOTANISH", given: "ODAM", visaNumber: "V7777777",
+    birth: "800101", expiry: "270101",
+  });
+  const { deps, edits, store } = makeDeps({ f1: visaResult(visa, "umra") });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(store.count(), 0, "viza o'zi odam yaratmasligi kerak");
+  assert.match(edits.at(-1)!.text, /ro'yxatda yo'q/);
+  store.close();
+});
+
+test("/vizasiz va /vizalar ro'yxat beradi", async () => {
+  const a = td3({
+    surname: "BORVIZA", given: "ODAM", docNumber: "AB1111111",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const b = td3({
+    surname: "YOQVIZA", given: "ODAM", docNumber: "AB2222222",
+    birth: "900707", sex: "F", expiry: "320202",
+  });
+  const { deps, sent, store } = makeDeps({ f1: okResult(a), f2: okResult(b) });
+
+  await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+  await handleUpdate(textUpdate(OPERATOR, "/viza AB1111111 umra"), deps as never);
+
+  await handleUpdate(textUpdate(OPERATOR, "/vizasiz"), deps as never);
+  const missing = sent.at(-1)!.text;
+  assert.match(missing, /1 \/ 2/);
+  assert.match(missing, /YOQVIZA/);
+  assert.ok(!missing.includes("BORVIZA"), "vizasi borlar ro'yxatda bo'lmasligi kerak");
+
+  await handleUpdate(textUpdate(OPERATOR, "/vizalar"), deps as never);
+  const all = sent.at(-1)!.text;
+  assert.match(all, /Vizalar: 1 \/ 2/);
+  assert.match(all, /BORVIZA[^\n]*Umra vizasi/);
+  assert.match(all, /YOQVIZA[^\n]*viza yo'q/);
+  store.close();
+});
+
+test("pasport qayta yuborilsa viza ma'lumoti saqlanadi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, store } = makeDeps({ f1: okResult(mrz), f2: okResult(mrz) });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await handleUpdate(textUpdate(OPERATOR, "/viza AB1234567 umra"), deps as never);
+  // Aniqroq rasm bilan qayta yuborildi
+  await processBatch(OPERATOR, ["f2"], deps as never);
+
+  assert.equal(store.all()[0].visa_type, "umra", "viza o'chib ketmasligi kerak");
+  store.close();
+});
+
+test("/vizani_ochir xato kiritilganni olib tashlaydi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await handleUpdate(textUpdate(OPERATOR, "/viza AB1234567 single"), deps as never);
+  assert.equal(store.all()[0].visa_type, "single");
+
+  await handleUpdate(textUpdate(OPERATOR, "/vizani_ochir AB1234567"), deps as never);
+  assert.equal(store.all()[0].visa_type, null);
+  assert.match(sent.at(-1)!.text, /olib tashlandi/);
   store.close();
 });
 
