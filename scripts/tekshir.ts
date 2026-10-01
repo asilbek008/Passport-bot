@@ -246,29 +246,60 @@ async function main(): Promise<number> {
   } else if (!existsSync("node_modules/@anthropic-ai/sdk")) {
     say("  (kutubxona o'rnatilmagan — npm install dan keyin tekshiriladi)");
   } else {
-    try {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const client = new Anthropic({ apiKey: key, maxRetries: 0 });
-      const models = await client.models.list();
-      ok(`kalit ishlaydi (${models.data.length} model mavjud)`);
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const { apiFailure } = await import("../src/vision.ts");
+    const client = new Anthropic({ apiKey: key, maxRetries: 0 });
+    const wanted = process.env.MODEL ?? "claude-opus-5-5";
 
-      const wanted = process.env.MODEL ?? "claude-opus-5-5";
-      if (models.data.some((m) => m.id === wanted)) {
-        ok(`model mavjud: ${wanted}`);
-      } else {
-        problem(`model ro'yxatda yo'q: ${wanted}`);
-        hint(`Mavjudlari: ${models.data.map((m) => m.id).slice(0, 5).join(", ")}…`);
-        hint(".env dagi MODEL ni to'g'rilang yoki o'chirib tashlang (standarti ishlatiladi)");
-      }
-    } catch (err) {
-      const { apiFailure } = await import("../src/vision.ts");
+    const explain = (err: unknown) => {
       const result = apiFailure(err);
       problem(
         result.ok === false && "problem" in result
           ? result.problem
-          : "kalitni tekshirib bo'lmadi",
+          : "tekshirib bo'lmadi",
       );
-      hint("console.anthropic.com → API Keys / Billing");
+    };
+
+    // 1-qadam: kalit haqiqiymi va model bormi (bu so'rov pul sarflamaydi)
+    let modelOk = false;
+    try {
+      const models = await client.models.list();
+      ok(`kalit haqiqiy (${models.data.length} model mavjud)`);
+
+      if (models.data.some((m) => m.id === wanted)) {
+        ok(`model mavjud: ${wanted}`);
+        modelOk = true;
+      } else {
+        problem(`model ro'yxatda yo'q: ${wanted}`);
+        hint(`Mavjudlari: ${models.data.map((m) => m.id).slice(0, 5).join(", ")}…`);
+        hint(".env dagi MODEL ni to'g'rilang yoki butunlay o'chiring");
+      }
+    } catch (err) {
+      explain(err);
+      hint("console.anthropic.com → API Keys");
+    }
+
+    // 2-qadam: HAQIQIY so'rov.
+    //
+    // Nega kerak: `models.list()` kalit haqiqiyligini ko'rsatadi, lekin
+    // HISOBDA MABLAG' borligini ko'rsatmaydi. Ya'ni "kalit ishlaydi" deb
+    // turib, rasm o'qish paytida "credit balance is too low" chiqishi
+    // mumkin edi. Shuning uchun bir martalik kichik so'rov yuboramiz —
+    // bir tiyinning ham ulushi, lekin javob aniq bo'ladi.
+    if (modelOk) {
+      try {
+        await client.messages.create({
+          model: wanted,
+          max_tokens: 64,
+          messages: [{ role: "user", content: "1" }],
+        });
+        ok("so'rov o'tdi — hisobda mablag' bor, bot ishlaydi");
+      } catch (err) {
+        explain(err);
+        hint("Eng ko'p uchraydigani: hisobda mablag' yo'q.");
+        hint("console.anthropic.com → Billing → Add credits");
+        hint("Diqqat: Claude Pro/Max OBUNASI API uchun ishlamaydi — u alohida to'lanadi.");
+      }
     }
   }
 

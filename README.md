@@ -372,8 +372,10 @@ npm run typecheck
 npm run tekshir
 ```
 
-Bu buyruq hammasini tekshiradi va nima xato ekanini aytadi: `.env` topildimi,
-token shakli to'g'rimi, Telegram javob beradimi. **Tokenni ekranga chiqarmaydi**
+Bu buyruq hammasini tekshiradi va nima xato ekanini aytadi: `npm install`
+qilinganmi, `.env` topildimi, token shakli to'g'rimi, Telegram javob
+beradimi, API kaliti ishlaydimi va **hisobda mablag' bormi** (buning uchun
+bitta juda kichik so'rov yuboradi — bir tiyinning ulushi). **Tokenni ekranga chiqarmaydi**
 (faqat oxirgi 4 belgi), shuning uchun natijani bemalol boshqaga ko'rsatasiz.
 
 Namuna:
