@@ -206,6 +206,27 @@ export const t = {
   reasonChecks: (fields: string[]) =>
     `tekshiruvdan o'tmadi (${fields.join(", ")}) — saqlanmadi`,
 
+  /**
+   * API ishlamadi — to'plam to'xtatildi. Bu rasmning aybi emas, shuning
+   * uchun "qayta suratga oling" deyilmaydi: sabab va yechim aytiladi.
+   */
+  apiStopped: (p: { why: string; done: number; total: number; retryable: boolean }) =>
+    [
+      "⛔️ *To'xtatildi — rasmning aybi emas.*",
+      "",
+      `Sabab: ${p.why}`,
+      "",
+      p.done > 0
+        ? `${p.done} ta rasm o'qilib saqlandi, qolgan ${p.total - p.done} tasi o'qilmadi.`
+        : `Hech qaysi rasm o'qilmadi (${p.total} ta).`,
+      "",
+      p.retryable
+        ? "Bu vaqtincha muammo — bir-ikki daqiqadan keyin qayta yuboring."
+        : "Buni avval tuzatish kerak, qayta yuborish yordam bermaydi.",
+      "",
+      "Tekshirish: terminalda `npm run tekshir`",
+    ].join("\n"),
+
   warnExpired: (p: Pilgrim | { surname: string; givenNames: string }) =>
     `🔴 ${esc("surname" in p ? p.surname : "")} ${esc(
       "givenNames" in p ? p.givenNames : "",

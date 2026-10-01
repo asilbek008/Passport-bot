@@ -66,7 +66,13 @@ export type ReadResult =
       authority: string | null;
     }
   | { ok: false; reason: "unreadable" | "not_a_document" | "refused"; problem: string }
-  | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz };
+  | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz }
+  /**
+   * API'ning o'zi ishlamadi: kalit xato, hisobda mablag' yo'q, tarmoq uzildi.
+   * Bu rasmning aybi emas — xodim buni bilishi kerak, aks holda 30 rasmni
+   * qayta suratga olib vaqt yo'qotadi.
+   */
+  | { ok: false; reason: "api_error"; problem: string; retryable: boolean };
 
 /**
  * Klient kerak bo'lganda yaratiladi. Modul yuklanganda yaratilsa, kalitsiz
@@ -88,27 +94,34 @@ export async function readDocument(
     ? (image.mime as Media)
     : "image/jpeg";
 
-  const response = await getClient().messages.create({
-    model: config.model,
-    max_tokens: 2048,
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: mime,
-              data: Buffer.from(image.bytes).toString("base64"),
+  let response: Anthropic.Message;
+  try {
+    response = await getClient().messages.create({
+      model: config.model,
+      max_tokens: 2048,
+      system: SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mime,
+                data: Buffer.from(image.bytes).toString("base64"),
+              },
             },
-          },
-          { type: "text", text: "Bu hujjatning MRZ qatorlarini ko'chirib yoz." },
-        ],
-      },
-    ],
-  });
+            { type: "text", text: "Bu hujjatning MRZ qatorlarini ko'chirib yoz." },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    // API'ning o'zi ishlamadi — rasmning aybi emas. Xodimga aniq sabab
+    // aytiladi, aks holda u 30 rasmni bekorga qayta suratga olardi.
+    return apiFailure(err);
+  }
 
   // Xavfsizlik klassifikatori rad etishi mumkin — content'dan oldin tekshiramiz
   if (response.stop_reason === "refusal") {
@@ -194,6 +207,75 @@ export function parseJson(text: string): z.SafeParseReturnType<unknown, z.infer<
   } catch {
     return ReadSchema.safeParse(undefined);
   }
+}
+
+/**
+ * API xatosini tushunarli sababga aylantiradi.
+ *
+ * Bu xabarlarda hujjat ma'lumoti YO'Q — ular API darajasidagi xatolar
+ * ("kalit xato", "hisobda mablag' yo'q"), shuning uchun ularni xodimga
+ * ko'rsatish va jurnalga yozish xavfsiz. Aks holda hamma narsa "texnik
+ * xato" bo'lib qolar edi va sababini topish imkonsiz bo'lardi.
+ */
+export function apiFailure(err: unknown): ReadResult {
+  const fail = (problem: string, retryable: boolean): ReadResult => ({
+    ok: false,
+    reason: "api_error",
+    problem,
+    retryable,
+  });
+
+  /**
+   * SDK `error.message` ga butun JSON javobni qo'yadi
+   * (`400 {"type":"error","error":{"message":"..."}}`), shuning uchun
+   * odam o'qiydigan qismini ajratib olamiz.
+   */
+  const humanMessage = (e: InstanceType<typeof Anthropic.APIError>): string => {
+    const body = e.error as { error?: { message?: unknown } } | undefined;
+    const inner = body?.error?.message;
+    return typeof inner === "string" && inner.length > 0 ? inner : e.message;
+  };
+
+  // Eng aniq turdan boshlab tekshiramiz
+  if (err instanceof Anthropic.AuthenticationError) {
+    return fail("API kaliti qabul qilinmadi — ANTHROPIC_API_KEY ni tekshiring", false);
+  }
+  if (err instanceof Anthropic.PermissionDeniedError) {
+    return fail("API kalitiga ruxsat yo'q (hisob bloklangan bo'lishi mumkin)", false);
+  }
+  if (err instanceof Anthropic.NotFoundError) {
+    return fail(`model topilmadi — .env dagi MODEL xato ("${config.model}")`, false);
+  }
+  if (err instanceof Anthropic.RateLimitError) {
+    return fail("API chekloviga urildi — bir daqiqa kutib qayta yuboring", true);
+  }
+  if (err instanceof Anthropic.BadRequestError) {
+    const message = humanMessage(err);
+    const lower = message.toLowerCase();
+    // Mablag' tugaganda Anthropic 400 qaytaradi va sababini yozadi
+    if (lower.includes("credit") || lower.includes("balance")) {
+      return fail(
+        "Anthropic hisobida mablag' yo'q — console.anthropic.com → Billing",
+        false,
+      );
+    }
+    return fail(`so'rov qabul qilinmadi: ${message.slice(0, 120)}`, false);
+  }
+  if (err instanceof Anthropic.APIConnectionError) {
+    return fail("API'ga ulanib bo'lmadi — internetni tekshiring", true);
+  }
+  if (err instanceof Anthropic.APIError) {
+    const retryable = err.status === undefined || err.status >= 500;
+    return fail(
+      `API xatosi ${err.status ?? ""}: ${humanMessage(err).slice(0, 120)}`.trim(),
+      retryable,
+    );
+  }
+  // Noma'lum xato — turini aytamiz, matnini emas (ehtiyot uchun)
+  return fail(
+    `kutilmagan xato (${err instanceof Error ? err.name : typeof err})`,
+    true,
+  );
 }
 
 /** Model bergan sanani ISO ga keltiradi; shubhali bo'lsa null (taxmin yo'q). */

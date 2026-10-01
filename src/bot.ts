@@ -324,6 +324,22 @@ export async function processBatch(
 
     const outcome = await readOne(fileIds[i], deps, now);
 
+    // API ishlamasa to'plamni to'xtatamiz: qolgan 29 rasmni o'qishga
+    // urinish ham shu xato bilan tugaydi, faqat pul va vaqt ketadi
+    if (outcome.kind === "api") {
+      await tg.editMessage(
+        chatId,
+        progress.message_id,
+        t.apiStopped({
+          why: outcome.why,
+          done: ok.length,
+          total: fileIds.length,
+          retryable: outcome.retryable,
+        }),
+      );
+      return;
+    }
+
     if (outcome.kind === "failed") {
       failed.push(t.failLine(i + 1, outcome.why));
       continue;
@@ -402,7 +418,9 @@ type Outcome =
         authority: string | null;
       };
     }
-  | { kind: "failed"; why: string };
+  | { kind: "failed"; why: string }
+  /** API'ning o'zi ishlamadi — qolgan rasmlarni o'qishdan ma'no yo'q */
+  | { kind: "api"; why: string; retryable: boolean };
 
 /** Bitta rasmni yuklab, o'qib, natijasini qaytaradi. Saqlamaydi. */
 async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> {
@@ -435,6 +453,10 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
         return { kind: "failed", why: t.reasonNotDocument };
       case "refused":
         return { kind: "failed", why: t.reasonRefused };
+      case "api_error":
+        // Sabab API darajasida — hujjat ma'lumoti yo'q, yozish xavfsiz
+        console.error(`[api] ${result.problem}`);
+        return { kind: "api", why: result.problem, retryable: result.retryable };
       default:
         return { kind: "failed", why: t.reasonUnreadable };
     }

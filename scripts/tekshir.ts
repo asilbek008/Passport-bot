@@ -234,6 +234,44 @@ async function main(): Promise<number> {
     }
   }
 
+  // --- Anthropic API: kalit haqiqatan ishlaydimi ---
+  //
+  // Bu `models.list()` — ro'yxat so'rovi, token sarflamaydi va pul ketmaydi,
+  // lekin kalit va hisob holatini aniq ko'rsatadi. Shu tufayli "kalit
+  // muammosi"ni "rasm muammosi"dan ajratish mumkin.
+
+  say("\nAnthropic API");
+  if (!key) {
+    say("  (kalit yo'q — o'tkazib yuborildi)");
+  } else if (!existsSync("node_modules/@anthropic-ai/sdk")) {
+    say("  (kutubxona o'rnatilmagan — npm install dan keyin tekshiriladi)");
+  } else {
+    try {
+      const { default: Anthropic } = await import("@anthropic-ai/sdk");
+      const client = new Anthropic({ apiKey: key, maxRetries: 0 });
+      const models = await client.models.list();
+      ok(`kalit ishlaydi (${models.data.length} model mavjud)`);
+
+      const wanted = process.env.MODEL ?? "claude-opus-5-5";
+      if (models.data.some((m) => m.id === wanted)) {
+        ok(`model mavjud: ${wanted}`);
+      } else {
+        problem(`model ro'yxatda yo'q: ${wanted}`);
+        hint(`Mavjudlari: ${models.data.map((m) => m.id).slice(0, 5).join(", ")}…`);
+        hint(".env dagi MODEL ni to'g'rilang yoki o'chirib tashlang (standarti ishlatiladi)");
+      }
+    } catch (err) {
+      const { apiFailure } = await import("../src/vision.ts");
+      const result = apiFailure(err);
+      problem(
+        result.ok === false && "problem" in result
+          ? result.problem
+          : "kalitni tekshirib bo'lmadi",
+      );
+      hint("console.anthropic.com → API Keys / Billing");
+    }
+  }
+
   // --- Xulosa ---
 
   say();
