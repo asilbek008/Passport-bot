@@ -11,7 +11,7 @@ loadEnv();
 import { config, isOperator } from "./config.ts";
 import { Telegram, TelegramError } from "./telegram.ts";
 import { Store } from "./store.ts";
-import { readDocument } from "./vision.ts";
+import { readDocument, providerInfo } from "./read.ts";
 import { Batcher } from "./batch.ts";
 import { Invites } from "./invites.ts";
 import { deletePhotos } from "./photos.ts";
@@ -29,13 +29,31 @@ function checkSettings(): string[] {
         "   u sizga token beradi. Uni .env fayliga BOT_TOKEN= dan keyin qo'yasiz.",
     );
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  // Rasmni o'qish uchun TANLANGAN provayderning kaliti kerak.
+  // Ikkisidan biri yetarli — ikkalasini ham talab qilmaymiz.
+  const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+  const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY);
+
+  if (!hasGemini && !hasAnthropic) {
     problems.push(
-      "ANTHROPIC_API_KEY yo'q.\n" +
-        "   console.anthropic.com → API Keys → Create Key.\n" +
-        "   Uni .env fayliga ANTHROPIC_API_KEY= dan keyin qo'yasiz.",
+      "Rasmni o'qish uchun kalit yo'q. Bittasi kerak:\n" +
+        "   GEMINI_API_KEY — aistudio.google.com/apikey (kalit `AIza` bilan boshlanadi)\n" +
+        "   ANTHROPIC_API_KEY — console.anthropic.com → API Keys\n" +
+        "   Kalitni .env fayliga qo'yasiz.",
+    );
+  } else if (config.provider === "gemini" && !hasGemini) {
+    problems.push(
+      "PROVIDER=gemini, lekin GEMINI_API_KEY yo'q.\n" +
+        "   aistudio.google.com/apikey dan kalit olib .env ga qo'yasiz,\n" +
+        "   yoki PROVIDER=anthropic qilasiz.",
+    );
+  } else if (config.provider === "anthropic" && !hasAnthropic) {
+    problems.push(
+      "PROVIDER=anthropic, lekin ANTHROPIC_API_KEY yo'q.\n" +
+        "   console.anthropic.com → API Keys, yoki PROVIDER=gemini qilasiz.",
     );
   }
+
   return problems;
 }
 
@@ -189,7 +207,8 @@ async function main() {
   await tg.setMyCommands(COMMANDS);
 
   console.log(`Bot ishga tushdi: @${me.username}`);
-  console.log(`Model: ${config.model}`);
+  const provider = providerInfo();
+  console.log(`O'qish: ${provider.name} / ${provider.model}`);
   console.log(`Saqlash muddati: ${config.retentionDays} kun`);
   console.log(`Bazadagi yozuvlar: ${store.count()}`);
 

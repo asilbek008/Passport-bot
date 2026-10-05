@@ -26,6 +26,18 @@ export const config = {
     return need("BOT_TOKEN");
   },
 
+  /**
+   * Rasmni kim o'qiydi: `gemini` yoki `anthropic`.
+   * Berilmasa — qaysi kalit mavjud bo'lsa, o'shanisi tanlanadi.
+   */
+  get provider(): "gemini" | "anthropic" {
+    const value = (process.env.PROVIDER ?? "").trim().toLowerCase();
+    if (value === "gemini" || value === "anthropic") return value;
+    // Avtomatik: Gemini kaliti bo'lsa Gemini, aks holda Anthropic
+    if (process.env.GEMINI_API_KEY) return "gemini";
+    return "anthropic";
+  },
+
   /** Anthropic API kaliti — rasmni o'qish uchun */
   get anthropicKey(): string {
     return need("ANTHROPIC_API_KEY");
@@ -34,6 +46,21 @@ export const config = {
   /** Model. Arzonroq variant: claude-sonnet-5-5 yoki claude-haiku-4-5 */
   get model(): string {
     return process.env.MODEL ?? "claude-opus-5-5";
+  },
+
+  /** Gemini API kaliti (Google AI Studio). `AIza` bilan boshlanadi. */
+  get geminiKey(): string {
+    return need("GEMINI_API_KEY");
+  },
+
+  /**
+   * Gemini modeli. Aniq nomini aistudio.google.com da ko'rasiz.
+   * MRZ — mayda shriftdagi aniqlik ishi, shuning uchun Flash tavsiya
+   * etiladi; Flash-Lite arzonroq, lekin belgilarni ko'proq xato o'qadi
+   * (tekshiruv raqamlari buni ushlaydi, lekin qayta surat olish kerak).
+   */
+  get geminiModel(): string {
+    return process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
   },
 
   /**

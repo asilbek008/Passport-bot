@@ -81,7 +81,11 @@ olmayman, ikkisi ham sizning hisobingizga tegishli:
 | Nima | Qayerdan |
 |---|---|
 | **Bot tokeni** | Telegramda [@BotFather](https://t.me/BotFather) → `/newbot` → nom bering → token beradi |
-| **Anthropic API kaliti** | [console.anthropic.com](https://console.anthropic.com) → API Keys → Create Key |
+| **Rasm o'qish kaliti** | **Gemini:** [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (kalit `AIza` bilan boshlanadi) · **yoki Claude:** [console.anthropic.com](https://console.anthropic.com) → API Keys |
+
+Rasm o'qish uchun **bittasi yetarli**. `PROVIDER=gemini` yoki
+`PROVIDER=anthropic` bilan tanlanadi; bo'sh qoldirsangiz mavjud kalit
+bo'yicha o'zi tanlaydi.
 
 Qolgan sozlamalarning hammasi standart qiymati bilan ishlaydi — tegmasangiz ham bo'ladi.
 
@@ -214,6 +218,38 @@ chegarasi 50 MB. Bunda guruhlarga bo'lib oling.
 
 ---
 
+## Provayder tanlovi: Gemini yoki Claude
+
+Rasmdan MRZ o'qish — modelning yagona ishi. Qolgan hammasi (tekshiruv
+raqamlari, Excel, zip, viza) provayderga bog'liq emas, shuning uchun
+almashtirish bir qator sozlama:
+
+```
+PROVIDER=gemini
+GEMINI_API_KEY=AIza...
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+**Shuning uchun provayder tanlovi ishonchlilikka ta'sir qilmaydi.**
+Xato o'qilgan MRZ qaysi model o'qiganidan qat'i nazar tekshiruv raqamida
+ushlanadi va saqlanmaydi. Tanlov faqat **sifatga** ta'sir qiladi: nechta
+rasmni qayta olish kerak bo'ladi.
+
+Shu tufayli solishtirish ham oson: 20 pasportni bir model bilan o'qib
+ko'rasiz, nechtasi `tekshiruvdan o'tmadi` bo'lganini bot o'zi aytadi.
+Keyin modelni almashtirib qayta o'qiysiz. Bu haqiqiy o'lchov, taxmin emas.
+
+### Gemini bepul tarifi haqida ogohlik
+
+Google'ning narx jadvalida bepul tarif uchun **«Content used to improve
+our products»**, pullik uchun **«Content not used to improve our
+products»** deb yozilgan. Bepul tarifda yuborilgan ma'lumot model
+o'qitishga ishlatiladi va odam ko'rib chiqishi mumkin.
+
+Mijozlarning pasport skanlari uchun bu to'g'ri kelmaydi. Kod ikkisida
+ham ishlaydi, lekin **pullik tarifni yoqishni tavsiya qilaman** —
+Gemini Flash-Lite bilan 50 kishilik guruh bir-ikki tiyin turadi.
+
 ## Viza
 
 Bot 50 kishilik guruhda **kimda viza bor, kimda yo'q** va **qaysi turi** ekanini
@@ -323,7 +359,10 @@ Nimalar sizning zimmangizda:
 ```
 src/
   mrz.ts        MRZ o'qish va tekshiruv raqamlari (toza kod, testlar shu yerda)
-  vision.ts     Claude'ga rasm yuborib, MRZ qatorlarini matn qilib olish
+  read.ts       Provayder tanlovi (yagona kirish nuqtasi)
+  read-shared.ts  Ikki provayder uchun umumiy: so'rov matni, JSON tahlili, MRZ
+  vision.ts     Anthropic (Claude) bilan o'qish
+  vision-gemini.ts  Gemini bilan o'qish
   store.ts      SQLite (node:sqlite — tashqi kutubxonasiz)
   excel.ts      .xlsx tuzish
   document-type.ts  Hujjat turi va davlat (MRZ'dan, determinlashgan)
@@ -346,7 +385,7 @@ scripts/
 Tekshirish:
 
 ```bash
-npm test         # 136 test
+npm test         # 147 test
 npm run typecheck
 ```
 

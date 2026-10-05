@@ -175,18 +175,43 @@ async function main(): Promise<number> {
     }
   }
 
-  // --- ANTHROPIC_API_KEY ---
+  // --- Rasm o'qigich kaliti (tanlangan provayder bo'yicha) ---
 
-  say("\nANTHROPIC_API_KEY");
-  const key = process.env.ANTHROPIC_API_KEY ?? "";
+  const { config } = await import("../src/config.ts");
+  const provider = config.provider;
+  const keyVar = provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
+  const key = process.env[keyVar] ?? "";
+
+  say(`\nRasm o'qigich: ${provider === "gemini" ? "Gemini" : "Anthropic"}`);
+  say(`  Model: ${provider === "gemini" ? config.geminiModel : config.model}`);
+  if (!process.env.PROVIDER) {
+    say("  _(PROVIDER berilmagan — mavjud kalit bo'yicha tanlandi)_");
+  }
+
+  say(`\n${keyVar}`);
   if (!key) {
     problem("yo'q yoki bo'sh");
-    hint("console.anthropic.com → API Keys → Create Key");
+    hint(
+      provider === "gemini"
+        ? "aistudio.google.com/apikey → Create API key"
+        : "console.anthropic.com → API Keys → Create Key",
+    );
   } else {
     say(`  Uzunligi: ${key.length} belgi`);
-    say(`  Ko'rinishi: ${mask(key, 11, 4)}`);
+    say(`  Ko'rinishi: ${mask(key, provider === "gemini" ? 6 : 11, 4)}`);
     if (/\s/.test(key)) {
       problem("ichida bo'shliq bor");
+    } else if (provider === "gemini") {
+      // AI Studio kaliti Google API kaliti: `AIza` bilan boshlanadi
+      if (!key.startsWith("AIza")) {
+        problem("'AIza' bilan boshlanmaydi — bu AI Studio kaliti emas");
+        hint("OAuth tokeni (`AQ.` kabi) yoki boshqa narsa ko'chirilgan bo'lishi mumkin");
+        hint("aistudio.google.com/apikey dan API kalitini oling");
+      } else if (key.length < 30) {
+        problem("juda qisqa — to'liq ko'chirilmagan");
+      } else {
+        ok("shakli to'g'ri");
+      }
     } else if (!key.startsWith("sk-ant-")) {
       problem("'sk-ant-' bilan boshlanmaydi");
       hint("Boshqa narsani ko'chirib qo'ymadingizmi?");
@@ -234,71 +259,61 @@ async function main(): Promise<number> {
     }
   }
 
-  // --- Anthropic API: kalit haqiqatan ishlaydimi ---
+  // --- Rasm o'qigich HAQIQATAN ishlaydimi ---
   //
-  // Bu `models.list()` — ro'yxat so'rovi, token sarflamaydi va pul ketmaydi,
-  // lekin kalit va hisob holatini aniq ko'rsatadi. Shu tufayli "kalit
-  // muammosi"ni "rasm muammosi"dan ajratish mumkin.
+  // Nega haqiqiy so'rov kerak: kalit haqiqiyligini ko'rsatish yetarli emas
+  // — hisobda mablag'/kvota bo'lmasa rasm o'qish paytida xato chiqadi.
+  // Shuning uchun bitta juda kichik so'rov yuboramiz.
 
-  say("\nAnthropic API");
+  say(`\n${provider === "gemini" ? "Gemini" : "Anthropic"} API`);
   if (!key) {
     say("  (kalit yo'q — o'tkazib yuborildi)");
-  } else if (!existsSync("node_modules/@anthropic-ai/sdk")) {
-    say("  (kutubxona o'rnatilmagan — npm install dan keyin tekshiriladi)");
+  } else if (!existsSync("node_modules")) {
+    say("  (npm install qilinmagan — keyin tekshiriladi)");
   } else {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const { apiFailure } = await import("../src/vision.ts");
-    const client = new Anthropic({ apiKey: key, maxRetries: 0 });
-    const wanted = process.env.MODEL ?? "claude-opus-5-5";
-
-    const explain = (err: unknown) => {
-      const result = apiFailure(err);
+    const explain = async (err: unknown) => {
+      const result =
+        provider === "gemini"
+          ? (await import("../src/vision-gemini.ts")).geminiFailure(err)
+          : (await import("../src/vision.ts")).apiFailure(err);
       problem(
-        result.ok === false && "problem" in result
-          ? result.problem
-          : "tekshirib bo'lmadi",
+        result.ok === false && "problem" in result ? result.problem : "tekshirib bo'lmadi",
       );
     };
 
-    // 1-qadam: kalit haqiqiymi va model bormi (bu so'rov pul sarflamaydi)
-    let modelOk = false;
     try {
-      const models = await client.models.list();
-      ok(`kalit haqiqiy (${models.data.length} model mavjud)`);
-
-      if (models.data.some((m) => m.id === wanted)) {
-        ok(`model mavjud: ${wanted}`);
-        modelOk = true;
+      if (provider === "gemini") {
+        const { GoogleGenAI } = await import("@google/genai");
+        const ai = new GoogleGenAI({ apiKey: key });
+        const response = await ai.models.generateContent({
+          model: config.geminiModel,
+          contents: "1",
+          config: { maxOutputTokens: 16 },
+        });
+        if (typeof response.text === "string") {
+          ok("so'rov o'tdi — kalit va kvota ishlaydi, bot ishlaydi");
+        } else {
+          problem("javob bo'sh qaytdi");
+        }
       } else {
-        problem(`model ro'yxatda yo'q: ${wanted}`);
-        hint(`Mavjudlari: ${models.data.map((m) => m.id).slice(0, 5).join(", ")}…`);
-        hint(".env dagi MODEL ni to'g'rilang yoki butunlay o'chiring");
-      }
-    } catch (err) {
-      explain(err);
-      hint("console.anthropic.com → API Keys");
-    }
-
-    // 2-qadam: HAQIQIY so'rov.
-    //
-    // Nega kerak: `models.list()` kalit haqiqiyligini ko'rsatadi, lekin
-    // HISOBDA MABLAG' borligini ko'rsatmaydi. Ya'ni "kalit ishlaydi" deb
-    // turib, rasm o'qish paytida "credit balance is too low" chiqishi
-    // mumkin edi. Shuning uchun bir martalik kichik so'rov yuboramiz —
-    // bir tiyinning ham ulushi, lekin javob aniq bo'ladi.
-    if (modelOk) {
-      try {
+        const { default: Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey: key, maxRetries: 0 });
         await client.messages.create({
-          model: wanted,
+          model: config.model,
           max_tokens: 64,
           messages: [{ role: "user", content: "1" }],
         });
         ok("so'rov o'tdi — hisobda mablag' bor, bot ishlaydi");
-      } catch (err) {
-        explain(err);
+      }
+    } catch (err) {
+      await explain(err);
+      if (provider === "gemini") {
+        hint("aistudio.google.com/apikey — kalit to'g'rimi va modelni tekshiring");
+        hint("Bepul tarifda daqiqada 10-15 so'rov chegarasi bor");
+      } else {
         hint("Eng ko'p uchraydigani: hisobda mablag' yo'q.");
-        hint("console.anthropic.com → Billing → Add credits");
-        hint("Diqqat: Claude Pro/Max OBUNASI API uchun ishlamaydi — u alohida to'lanadi.");
+        hint("console.anthropic.com -> Billing -> Add credits");
+        hint("Diqqat: Claude Pro/Max OBUNASI API uchun ishlamaydi.");
       }
     }
   }
