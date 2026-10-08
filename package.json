@@ -12,7 +12,9 @@
     "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts",
     "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "tekshir": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tekshir.ts"
+    "tekshir": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tekshir.ts",
+    "zaxira": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/zaxira.ts",
+    "tiklash": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tiklash.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",

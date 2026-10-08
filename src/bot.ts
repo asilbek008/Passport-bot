@@ -12,6 +12,7 @@
 
 import { t, esc } from "./text.ts";
 import { config, isOperator } from "./config.ts";
+import { day } from "./day.ts";
 import { monthsUntilExpiry, failedFields } from "./mrz.ts";
 import { splitMessage } from "./batch.ts";
 import { buildWorkbook, workbookName, workbookCaption, passportState } from "./excel.ts";
@@ -20,7 +21,7 @@ import { parseVisaType, type VisaType } from "./visa.ts";
 import { withRetry } from "./throttle.ts";
 import { pickPhoto, documentFits } from "./image-pick.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
-import { cropToDocument, type Box } from "./crop.ts";
+import { cropToDocument, type Box, type Rotation } from "./crop.ts";
 import {
   savePhoto,
   deletePhoto,
@@ -79,6 +80,9 @@ export const COMMANDS = [
 
 /** Arxiv ichidagi papka nomi — xodim zip'ni ochganda shu ko'rinadi. */
 const ARCHIVE_FOLDER = "umra-pasportlar";
+
+/** `/royxat` da nechta kishi ko'rsatiladi. Qolgani Excelda. */
+const LIST_LIMIT = 40;
 
 /** Telegram xabar chegarasini hisobga olib yuboradi. */
 async function reply(tg: Telegram, chatId: number, text: string): Promise<void> {
@@ -200,12 +204,24 @@ async function handleCommand(
         await tg.sendMessage(chatId, t.emptyList());
         return;
       }
-      const lines = rows.map(
+      // 300 kishilik ro'yxat 6 ta xabarga bo'linib ketardi — telefonda
+      // uni aylantirib chiqish qiyin. Birinchi 40 tasi ko'rsatiladi,
+      // qolgani Excelda (jadval baribir shu buyruqdan qulayroq).
+      const shown = rows.slice(0, LIST_LIMIT);
+      const lines = shown.map(
         (p, i) =>
           `${i + 1}. ${esc(p.surname)} ${esc(p.given_names)} — \`${p.doc_number}\`` +
           ` · ${p.expiry_date}`,
       );
-      await reply(tg, chatId, t.listHeader(rows.length) + lines.join("\n"));
+      const tail =
+        rows.length > shown.length
+          ? t.listTruncated(shown.length, rows.length)
+          : "";
+      await reply(
+        tg,
+        chatId,
+        t.listHeader(rows.length) + lines.join("\n") + tail,
+      );
       return;
     }
 
@@ -465,7 +481,7 @@ async function sendArchive(
 
   await tg.sendDocument(
     chatId,
-    `${ARCHIVE_FOLDER}-${now.toISOString().slice(0, 10)}.zip`,
+    `${ARCHIVE_FOLDER}-${day(now)}.zip`,
     zip,
     t.zipCaption({
       photos: entries.length - 1,
@@ -508,6 +524,8 @@ export async function processBatch(
   let photoProblems = 0;
   /** Nechta rasm hujjatning o'ziga qirqildi */
   let croppedCount = 0;
+  /** Nechta rasm to'g'ri holatga burildi */
+  let turnedCount = 0;
   /** Viza yorliqlari — pasportlardan alohida hisobot beriladi */
   const visaOk: string[] = [];
   const visaProblems: string[] = [];
@@ -610,10 +628,18 @@ export async function processBatch(
     // Rasm hujjatning o'ziga qirqiladi: kadrdagi stol, qo'l va boshqa
     // qog'ozlar olib tashlanadi — viza arizasiga pasportning o'zi ilova
     // qilinadi. Chegara ishonchsiz bo'lsa qirqilmaydi (`crop.ts`).
+    // Yonboshlagan rasm ham shu yerda to'g'rilanadi: qirqish va burish
+    // birga bajariladi, shunda rasm bir marta qayta siqiladi
     const shot = config.crop
-      ? cropToDocument(image, outcome.box, config.cropMarginPct)
-      : { bytes: image.bytes, cropped: false };
+      ? cropToDocument(
+          image,
+          outcome.box,
+          config.cropMarginPct,
+          outcome.rotation,
+        )
+      : { bytes: image.bytes, cropped: false, turned: 0 as Rotation };
     if (shot.cropped) croppedCount++;
+    if (shot.turned !== 0) turnedCount++;
 
     // Rasm fayli odam o'qiydigan nom bilan saqlanadi.
     // Bir xil ismli ikki kishi bo'lsa, ikkinchisiga pasport raqami qo'shiladi.
@@ -705,6 +731,7 @@ export async function processBatch(
     total: fileIds.length,
     files: batchRows.length > 0,
     cropped: croppedCount,
+    turned: turnedCount,
     photoProblems,
   });
 
@@ -744,6 +771,8 @@ type Outcome =
       image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
       /** Hujjatning kadrdagi chegarasi — qirqish uchun; yo'q bo'lsa null */
       box: Box | null;
+      /** Rasmni to'g'rilash uchun burish: 0 | 90 | 180 | 270 */
+      rotation: Rotation;
     }
   | { kind: "failed"; why: string }
   /** API'ning o'zi ishlamadi — qolgan rasmlarni o'qishdan ma'no yo'q */
@@ -780,6 +809,7 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
         },
         image,
         box: result.box,
+        rotation: result.rotation,
       };
     }
 

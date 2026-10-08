@@ -26,6 +26,9 @@ import { decode, encode } from "jpeg-js";
 /** Hujjat chegarasi, rasm o'lchamidan qat'i nazar 0–1000 oralig'ida. */
 export type Box = { x0: number; y0: number; x1: number; y1: number };
 
+/** Rasmni to'g'ri holatga keltirish uchun burish (soat yo'nalishida). */
+export type Rotation = 0 | 90 | 180 | 270;
+
 /** Qirqilgan rasm sifati. 90 — MRZ qatorlari aniq qoladi. */
 const QUALITY = 90;
 
@@ -33,6 +36,12 @@ const QUALITY = 90;
 const MIN_WIDTH = 0.25;
 const MIN_HEIGHT = 0.15;
 const MIN_AREA = 0.08;
+
+/**
+ * Burilish chorakdan (90°) shuncha darajadan ko'p farq qilsa, burilmaydi.
+ * Model holatni aniq bilmagan degani.
+ */
+const TURN_TOLERANCE = 20;
 
 /** Qirqilgan rasm shundan kichik bo'lmasin (piksel) — MRZ o'qilmay qoladi. */
 const MIN_PIXELS = 200;
@@ -56,6 +65,30 @@ export function parseBox(raw: unknown): Box | null {
   if (nums.some((n) => !Number.isFinite(n))) return null;
   const [y0, x0, y1, x1] = nums;
   return { x0, y0, x1, y1 };
+}
+
+/**
+ * Model aytgan burilishni o'qiydi.
+ *
+ * Faqat 0/90/180/270 qabul qilinadi: pasport odatda shu to'rt holatdan
+ * birida bo'ladi, oraliq burchakka burish esa rasmni cho'zib, MRZ ni
+ * buzib qo'yardi. Noma'lum qiymat — 0, ya'ni burilmaydi.
+ */
+export function parseRotation(raw: unknown): Rotation {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return 0;
+
+  // Manfiy va 360 dan oshgan qiymatni to'g'rilaymiz (-90 → 270)
+  const angle = ((n % 360) + 360) % 360;
+  const nearest = Math.round(angle / 90) * 90;
+
+  // Chorakdan uzoq bo'lsa — burmaymiz. 45° kabi qiymat ikki tomonga teng,
+  // ya'ni model holatni aniq bilmagan. Qirqishdagi qoida bilan bir xil:
+  // shubha bo'lsa rasmga tegmaymiz.
+  if (Math.abs(angle - nearest) > TURN_TOLERANCE) return 0;
+
+  const normal = nearest % 360;
+  return normal === 90 || normal === 180 || normal === 270 ? normal : 0;
 }
 
 /**
@@ -108,6 +141,44 @@ export function toPixels(
   return { x, y, w, h };
 }
 
+/**
+ * RGBA piksellarni soat yo'nalishida buradi.
+ *
+ * Faqat 90° ga karrali burilish, shuning uchun piksellar aralashtirilmaydi
+ * — joyi almashadi, xolos. Rasm sifatiga ta'sir qilmaydi.
+ */
+function rotatePixels(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  degrees: Rotation,
+): { data: Uint8Array; width: number; height: number } {
+  if (degrees === 0) return { data, width, height };
+
+  const turned = degrees === 180 ? { w: width, h: height } : { w: height, h: width };
+  const out = new Uint8Array(turned.w * turned.h * 4);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Yangi joyi: soat yo'nalishida burilganda
+      const to =
+        degrees === 90
+          ? { x: height - 1 - y, y: x }
+          : degrees === 180
+            ? { x: width - 1 - x, y: height - 1 - y }
+            : { x: y, y: width - 1 - x };
+      const from = (y * width + x) * 4;
+      const into = (to.y * turned.w + to.x) * 4;
+      out[into] = data[from];
+      out[into + 1] = data[from + 1];
+      out[into + 2] = data[from + 2];
+      out[into + 3] = data[from + 3];
+    }
+  }
+
+  return { data: out, width: turned.w, height: turned.h };
+}
+
 /** RGBA piksellardan to'rtburchakni ko'chirib oladi. */
 function cutPixels(
   data: Uint8Array,
@@ -126,10 +197,15 @@ export type CropResult = {
   bytes: Uint8Array<ArrayBuffer>;
   /** Qirqildimi. `false` — rasm asl holida qaytdi */
   cropped: boolean;
+  /** Qancha burildi (0 — burilmadi) */
+  turned: Rotation;
 };
 
 /**
- * Rasmni chegara bo'yicha qirqadi.
+ * Rasmni hujjatning o'ziga qirqadi va to'g'ri holatga buradi.
+ *
+ * Ikkisi BIRGA bajariladi — rasm bir marta dekodlanib, bir marta qayta
+ * siqiladi. Alohida qilinsa sifat ikki marta yo'qolardi.
  *
  * Hech qachon xato tashlamaydi: nimadir ishlamasa asl rasmni qaytaradi.
  * Rasmni saqlash qirqishdan muhimroq — pasport qo'lga kirgan, uni
@@ -139,10 +215,13 @@ export function cropToDocument(
   image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
   box: Box | null,
   marginPct: number,
+  rotation: Rotation = 0,
 ): CropResult {
-  const keep: CropResult = { bytes: image.bytes, cropped: false };
+  const keep: CropResult = { bytes: image.bytes, cropped: false, turned: 0 };
 
-  if (!box || !plausible(box)) return keep;
+  const willCrop = Boolean(box && plausible(box));
+  // Ikkisi ham kerak bo'lmasa, rasmga umuman tegmaymiz
+  if (!willCrop && rotation === 0) return keep;
   // jpeg-js faqat JPEG biladi. Telegram oddiy rasmni JPEG qilib beradi,
   // shuning uchun bu deyarli har doim bajariladi.
   if (image.mime !== "image/jpeg") return keep;
@@ -156,16 +235,45 @@ export function cropToDocument(
       maxMemoryUsageInMB: 512,
     });
 
-    const rect = toPixels(expand(box, marginPct), raw.width, raw.height);
-    if (rect.w < MIN_PIXELS || rect.h < MIN_PIXELS) return keep;
-    if (rect.w >= raw.width && rect.h >= raw.height) return keep;
+    let pixels: Uint8Array = raw.data;
+    let width = raw.width;
+    let height = raw.height;
+    let cropped = false;
 
-    const cut = cutPixels(raw.data, raw.width, rect);
-    const jpeg = encode({ data: cut, width: rect.w, height: rect.h }, QUALITY);
+    // AVVAL qirqamiz: chegara asl kadrga nisbatan aytilgan, burilgandan
+    // keyin u boshqa joyni ko'rsatib qolardi
+    if (willCrop && box) {
+      const rect = toPixels(expand(box, marginPct), width, height);
+      const tooSmall = rect.w < MIN_PIXELS || rect.h < MIN_PIXELS;
+      const wholeFrame = rect.w >= width && rect.h >= height;
+      if (!tooSmall && !wholeFrame) {
+        pixels = cutPixels(pixels, width, rect);
+        width = rect.w;
+        height = rect.h;
+        cropped = true;
+      }
+    }
+
+    // Ikkisi ham bajarilmasa, qayta siqishdan ma'no yo'q
+    if (!cropped && rotation === 0) return keep;
+
+    const turnedImage = rotatePixels(pixels, width, height, rotation);
+    const jpeg = encode(
+      {
+        data: turnedImage.data,
+        width: turnedImage.width,
+        height: turnedImage.height,
+      },
+      QUALITY,
+    );
     // Hajm bu yerda tekshirilmaydi: ataylab. Qirqilgan rasm asl faylga
     // teng yoki kattaroq chiqishi mumkin (siqish darajasi boshqacha),
     // lekin MAZMUNI to'g'ri — kerak bo'lgani ham shu.
-    return { bytes: new Uint8Array(jpeg.data) as Uint8Array<ArrayBuffer>, cropped: true };
+    return {
+      bytes: new Uint8Array(jpeg.data) as Uint8Array<ArrayBuffer>,
+      cropped,
+      turned: rotation,
+    };
   } catch {
     // Dekodlash/kodlash xatosi — rasm baribir saqlanadi
     return keep;

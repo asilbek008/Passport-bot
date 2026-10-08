@@ -5,3 +5,11 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# Zaxira fayllari — pasport ma'lumoti bor, git'ga tushmaydi
+zaxira/
+*.umz
+
+# Bot qulfi va jurnallar
+*.lock
+logs/

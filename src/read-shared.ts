@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 import { parseMrz, MrzError, type Mrz } from "./mrz.ts";
-import { parseBox, type Box } from "./crop.ts";
+import { parseBox, parseRotation, type Box, type Rotation } from "./crop.ts";
 import type { VisaType } from "./visa.ts";
 
 export const ReadSchema = z.object({
@@ -44,6 +44,14 @@ export const ReadSchema = z.object({
    * holida saqlanadi. MRZ o'qishga hech qanday ta'siri yo'q.
    */
   document_box: z.array(z.number()).nullable().optional(),
+  /**
+   * Hujjat kadrda qanchaga burilgan: 0, 90, 180 yoki 270 daraja.
+   *
+   * Telefonni yonboshlab olsa, arxivdagi pasport ham yonboshlab turadi —
+   * konsullikka bunday yuklash noqulay. Shu raqam bo'yicha rasm to'g'ri
+   * holatga buriladi (`crop.ts`). Ishonchsiz bo'lsa 0 yoki yo'q.
+   */
+  rotation: z.number().nullable().optional(),
 });
 
 export const SYSTEM = `Sen hujjatdagi mashina o'qiydigan zonani (MRZ) ko'chirib yozadigan vositasan.
@@ -88,10 +96,16 @@ qirqiladi, shuning uchun:
   • chegarani aniq ko'rsatolmasang document_box=null qoldir. Yarmi
     kesilgan rasm qirqilmagan rasmdan yomonroq.
 
+rotation — hujjat kadrda qanchaga burilgan, SOAT YO'NALISHIDA to'g'rilash
+uchun kerakli daraja: 0, 90, 180 yoki 270. Ya'ni hujjatning yozuvlari
+to'g'ri o'qilishi uchun rasmni soat yo'nalishida necha daraja burish
+kerak. Hujjat to'g'ri turgan bo'lsa 0. Ishonchingiz bo'lmasa 0 qoldir.
+
 JAVOB SHAKLI: faqat JSON obyekt, boshqa hech qanday matn yoki izohsiz:
 {"mrz_lines":["...","..."],"issue_date":null,"place_of_birth":null,
 "authority":null,"document_kind":"passport","mrz_readable":true,
-"problem":null,"visa_type":null,"document_box":[120,80,890,960]}`;
+"problem":null,"visa_type":null,"document_box":[120,80,890,960],
+"rotation":0}`;
 
 export const USER_PROMPT = "Bu hujjatning MRZ qatorlarini ko'chirib yoz.";
 
@@ -106,6 +120,8 @@ export type ReadResult =
       visaType: VisaType | null;
       /** Hujjatning kadrdagi chegarasi — rasmni qirqish uchun; yo'q bo'lsa null */
       box: Box | null;
+      /** Rasmni to'g'ri holatga keltirish uchun burish: 0 | 90 | 180 | 270 */
+      rotation: Rotation;
     }
   | { ok: false; reason: "unreadable" | "not_a_document" | "refused"; problem: string }
   | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz }
@@ -221,5 +237,6 @@ export function interpret(text: string, today: Date): ReadResult {
     authority: out.authority?.trim() || null,
     visaType: out.visa_type ?? null,
     box: parseBox(out.document_box),
+    rotation: parseRotation(out.rotation),
   };
 }

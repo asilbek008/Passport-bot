@@ -99,6 +99,7 @@ function okResult(mrzText: string): ReadResult {
     visaType: null,
     // Chegara yo'q — rasm qirqilmaydi (qirqish alohida testda)
     box: null,
+    rotation: 0,
   };
 }
 
@@ -1190,5 +1191,46 @@ test("chegara ishonchsiz bo'lsa rasm asl holida saqlanadi", async () => {
     source,
     "shubhali chegarada asl rasm saqlanishi kerak",
   );
+  store.close();
+});
+
+test("/royxat uzun ro'yxatni qisqartiradi — bitta xabar bo'lib qoladi", async () => {
+  const { deps, sent, store } = makeDeps({});
+
+  // 50 kishi — chegara 40 ta
+  for (let i = 0; i < 50; i++) {
+    const n = String(i).padStart(2, "0");
+    store.save({
+      added_by: OPERATOR,
+      group_label: "",
+      surname: `FAMILIYA${n}`,
+      given_names: "ISM",
+      doc_code: "P",
+      doc_number: `AB00000${n}`,
+      nationality: "UZB",
+      birth_date: "1990-01-01",
+      sex: "M",
+      expiry_date: "2031-01-01",
+      personal_number: "",
+      issue_date: null,
+      place_of_birth: null,
+      authority: null,
+      mrz_format: "TD3",
+      doc_kind: "pasport",
+      doc_country: "O'zbekiston",
+      doc_label: "O'zbek pasporti",
+      photo_file: null,
+    });
+  }
+
+  await handleUpdate(textUpdate(OPERATOR, "/royxat"), deps as never);
+
+  assert.equal(sent.length, 1, "bitta xabarga sig'ishi kerak");
+  const text = sent[0].text;
+  assert.match(text, /50 kishi/, "jami soni aytiladi");
+  assert.match(text, /va yana 10 kishi/, "qolgani haqida aytiladi");
+  assert.match(text, /\/excel/, "to'liq ro'yxat qayerdan olinishi aytiladi");
+  assert.ok(text.includes("FAMILIYA39"), "40-chi ko'rinishi kerak");
+  assert.ok(!text.includes("FAMILIYA40"), "41-chi ko'rinmasligi kerak");
   store.close();
 });

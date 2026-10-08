@@ -17,6 +17,7 @@ import { Invites } from "./invites.ts";
 import { deletePhotos } from "./photos.ts";
 import { Throttle } from "./throttle.ts";
 import { t } from "./text.ts";
+import { lock } from "./lock.ts";
 import { handleUpdate, processBatch, COMMANDS, type Deps } from "./bot.ts";
 
 const CODE_TTL_MINUTES = 60;
@@ -67,6 +68,34 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
+// Bir vaqtda ikkita bot bitta tokenga ulansa Telegram ikkisini ham
+// rad etadi (409). Shuning uchun ikkinchi nusxa shu yerda to'xtaydi.
+const held = lock(`${config.dbPath}.lock`);
+if (!held.ok) {
+  console.error(
+    [
+      "",
+      "Bot allaqachon ishlayapti — ikkinchi nusxa ishga tushmadi.",
+      "",
+      `Ishlayotgan nusxa raqami: ${held.pid}`,
+      "",
+      "Nega bu muhim: ikkita bot bitta tokenga ulansa, Telegram",
+      "ikkisini ham rad etadi va xabarlar yo'qoladi.",
+      "",
+      "Ehtimol bot avtomatik ishga tushgan va orqa fonda ishlayapti.",
+      "Tekshirish:  windows\\3-avtomatik.bat → 3 (holatini ko'rish)",
+      "",
+      "Haqiqatan to'xtatish kerak bo'lsa, Vazifa menejerida (Ctrl+Shift+Esc)",
+      "Node.js dasturini yopasiz.",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+/** Qulfni bo'shatish. Chiqishda chaqiriladi. */
+const releaseLock = held.release;
+
 const tg = new Telegram(config.botToken);
 const store = new Store();
 const invites = new Invites(CODE_TTL_MINUTES);
@@ -101,7 +130,12 @@ function stop(signal: string) {
   console.log(`\n${signal} — to'xtatilmoqda...`);
   running = false;
   batcher.stop();
+  releaseLock();
 }
+
+// Qulf har qanday chiqishda olib tashlanadi, aks holda keyingi marta
+// "allaqachon ishlayapti" deb noto'g'ri to'xtab qolardi
+process.on("exit", () => releaseLock());
 process.on("SIGINT", () => stop("SIGINT"));
 process.on("SIGTERM", () => stop("SIGTERM"));
 
@@ -251,6 +285,26 @@ async function main() {
         }
       }
     } catch (err) {
+      // 409 — boshqa nusxa ham shu tokenni o'qiyapti. Qulf buni oldini
+      // oladi, lekin bot BOSHQA kompyuterda ham ishlayotgan bo'lishi
+      // mumkin — unda qulf yordam bermaydi, shuning uchun aytamiz.
+      if (err instanceof TelegramError && err.code === 409) {
+        console.error(
+          [
+            "",
+            "Bu bot BOSHQA joyda ham ishlayapti (Telegram 409).",
+            "",
+            "Bitta tokenni ikki joyda ishlatib bo'lmaydi: Telegram",
+            "ikkisini ham rad etadi va xabarlar yo'qoladi.",
+            "",
+            "Boshqa kompyuterda yoki serverda shu botni to'xtatasiz,",
+            "yoki @BotFather dan ikkinchi bot olib, alohida token berasiz.",
+            "",
+          ].join("\n"),
+        );
+        await new Promise((r) => setTimeout(r, 30_000));
+        continue;
+      }
       console.error(
         `[polling] xato: ${err instanceof Error ? err.message : "noma'lum"} — 5s kutib qayta urinaman`,
       );

@@ -12,6 +12,7 @@
 import writeXlsxFile from "write-excel-file/node";
 import type { Cell as XlsxCell } from "write-excel-file";
 import { config } from "./config.ts";
+import { day } from "./day.ts";
 import type { Pilgrim } from "./store.ts";
 import { VISA_LABELS, type VisaType } from "./visa.ts";
 
@@ -173,9 +174,9 @@ export async function buildWorkbook(
   return new Uint8Array(buffer) as Uint8Array<ArrayBuffer>;
 }
 
-/** Fayl nomi: `umra-pasportlar-2026-09-29.xlsx` */
+/** Fayl nomi: `umra-pasportlar-2026-09-29.xlsx` (O'zbekiston kuni) */
 export function workbookName(today = new Date()): string {
-  return `umra-pasportlar-${today.toISOString().slice(0, 10)}.xlsx`;
+  return `umra-pasportlar-${day(today)}.xlsx`;
 }
 
 /** Xodimga yuboriladigan izoh: nechta kishi, nechtasida muammo bor. */

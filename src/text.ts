@@ -346,6 +346,8 @@ export const t = {
     files?: boolean;
     /** Nechta rasm hujjatning o'ziga qirqildi */
     cropped?: number;
+    /** Nechta rasm to'g'ri holatga burildi */
+    turned?: number;
     /** Nechta rasm diskka saqlanmadi */
     photoProblems?: number;
   }) => {
@@ -390,12 +392,17 @@ export const t = {
 
     if (parts.files) {
       const cropped = parts.cropped ?? 0;
+      const turned = parts.turned ?? 0;
+      // Rasmga nima qilinganini aytamiz: xodim arxivni ochganda
+      // rasm o'zgarganini ko'rib hayron bo'lmasin
+      const done = [
+        cropped > 0 ? `${cropped} ta rasm hujjatning o'ziga qirqildi` : "",
+        turned > 0 ? `${turned} tasi to'g'ri holatga burildi` : "",
+      ].filter(Boolean);
       out.push(
         "",
         "📊 Excel jadval va 🗂 arxiv yuborilmoqda...",
-        cropped > 0
-          ? `_${cropped} ta rasm hujjatning o'ziga qirqildi._`
-          : "",
+        done.length > 0 ? `_${done.join(", ")}._` : "",
       );
     }
 
@@ -450,7 +457,7 @@ export const t = {
   listHeader: (n: number) => `*O'qilgan pasportlar — ${n} kishi*\n`,
 
   listTruncated: (shown: number, total: number) =>
-    `\n_...va yana ${total - shown} kishi. To'liq ro'yxat Excelda._`,
+    `\n\n_...va yana ${total - shown} kishi._\nTo'liq ro'yxat: /excel`,
 
   noWarnings: "Hammaning pasporti yetarli muddatga amal qiladi. 👍",
 

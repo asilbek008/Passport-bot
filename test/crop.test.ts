@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { encode, decode } from "jpeg-js";
 import {
   parseBox,
+  parseRotation,
   plausible,
   expand,
   toPixels,
@@ -234,4 +235,133 @@ test("chetiga bo'sh joy qo'shilgani natijada ko'rinadi", () => {
   const b = decode(padded.bytes, { useTArray: true });
   assert.equal(a.width, 600);
   assert.equal(b.width, 700, "har tomondan 5% (50px) qo'shilishi kerak");
+});
+
+// --- Burish ---
+//
+// Telefonni yonboshlab olsa, arxivdagi pasport ham yonboshlab turardi.
+// Konsullikka bunday yuklash noqulay.
+
+test("burilish darajasi faqat 0/90/180/270 bo'ladi", () => {
+  assert.equal(parseRotation(0), 0);
+  assert.equal(parseRotation(90), 90);
+  assert.equal(parseRotation(180), 180);
+  assert.equal(parseRotation(270), 270);
+});
+
+test("oraliq va g'alati burchaklar to'g'rilanadi", () => {
+  // 87° — model aniq o'lchamaydi, eng yaqin chorakka yaxlitlanadi
+  assert.equal(parseRotation(87), 90);
+  assert.equal(parseRotation(-90), 270, "manfiy ham to'g'ri o'qiladi");
+  assert.equal(parseRotation(450), 90, "360 dan oshgani ham");
+  assert.equal(parseRotation(360), 0);
+  // Oraliq burchakka burish rasmni cho'zib, MRZ ni buzardi — rad etiladi
+  assert.equal(parseRotation(45), 0, "45° ikki tomonga teng — burmaymiz");
+});
+
+test("yaroqsiz burilish 0 bo'ladi", () => {
+  assert.equal(parseRotation(null), 0);
+  assert.equal(parseRotation("yonboshlagan"), 0);
+  assert.equal(parseRotation(undefined), 0);
+  assert.equal(parseRotation(NaN), 0);
+});
+
+/** Chap yuqori burchagi qora, qolgani oq — burilishni ko'rish uchun. */
+function cornerMarked(width: number, height: number) {
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      // Chap yuqori chorak — qora belgi
+      const mark = x < width * 0.25 && y < height * 0.25;
+      data[i] = mark ? 10 : 250;
+      data[i + 1] = mark ? 10 : 250;
+      data[i + 2] = mark ? 10 : 250;
+      data[i + 3] = 255;
+    }
+  }
+  const jpeg = encode({ data, width, height }, 95);
+  return {
+    bytes: new Uint8Array(jpeg.data) as Uint8Array<ArrayBuffer>,
+    mime: "image/jpeg",
+  };
+}
+
+/** Rasmning to'rt burchagidagi rang (o'rtachasi, JPEG shovqinisiz). */
+function corners(bytes: Uint8Array) {
+  const img = decode(bytes, { useTArray: true });
+  const at = (x: number, y: number) => img.data[(y * img.width + x) * 4];
+  const inset = 8;
+  return {
+    width: img.width,
+    height: img.height,
+    topLeft: at(inset, inset),
+    topRight: at(img.width - 1 - inset, inset),
+    bottomRight: at(img.width - 1 - inset, img.height - 1 - inset),
+    bottomLeft: at(inset, img.height - 1 - inset),
+  };
+}
+
+test("90° ga burilganda belgi chapdan o'ngga o'tadi", () => {
+  const image = cornerMarked(800, 400);
+  const result = cropToDocument(image, null, 0, 90);
+
+  assert.equal(result.turned, 90);
+  assert.equal(result.cropped, false, "faqat burildi, qirqilmadi");
+
+  const c = corners(result.bytes);
+  assert.equal(c.width, 400, "soat yo'nalishida burilganda o'lcham almashadi");
+  assert.equal(c.height, 800);
+  assert.ok(c.topRight < 100, `belgi o'ng yuqorida bo'lishi kerak: ${c.topRight}`);
+  assert.ok(c.topLeft > 200, "chap yuqori endi oq");
+});
+
+test("180° ga burilganda belgi qarshi burchakka o'tadi", () => {
+  const image = cornerMarked(600, 600);
+  const result = cropToDocument(image, null, 0, 180);
+
+  const c = corners(result.bytes);
+  assert.equal(c.width, 600, "180° da o'lcham o'zgarmaydi");
+  assert.ok(c.bottomRight < 100, `belgi o'ng pastda: ${c.bottomRight}`);
+  assert.ok(c.topLeft > 200);
+});
+
+test("270° ga burilganda belgi pastga o'tadi", () => {
+  const image = cornerMarked(800, 400);
+  const result = cropToDocument(image, null, 0, 270);
+
+  const c = corners(result.bytes);
+  assert.equal(c.width, 400);
+  assert.ok(c.bottomLeft < 100, `belgi chap pastda: ${c.bottomLeft}`);
+  assert.ok(c.topLeft > 200);
+});
+
+test("burish 0 bo'lsa va qirqish ham bo'lmasa rasmga tegilmaydi", () => {
+  const image = cornerMarked(400, 400);
+  const result = cropToDocument(image, null, 0, 0);
+  assert.equal(result.bytes, image.bytes, "qayta siqilmasligi kerak");
+  assert.equal(result.turned, 0);
+  assert.equal(result.cropped, false);
+});
+
+test("qirqish va burish birga — rasm BIR MARTA qayta siqiladi", () => {
+  const image = cornerMarked(1000, 1000);
+  const result = cropToDocument(image, { x0: 100, y0: 100, x1: 900, y1: 900 }, 0, 90);
+
+  assert.equal(result.cropped, true);
+  assert.equal(result.turned, 90);
+  const c = corners(result.bytes);
+  // 800x800 qirqildi, keyin burildi — kvadrat bo'lgani uchun o'lcham bir xil
+  assert.equal(c.width, 800);
+  assert.equal(c.height, 800);
+});
+
+test("burilgan JPEG bo'lmasa, burilmaydi ham", () => {
+  const image = {
+    bytes: new Uint8Array([137, 80, 78, 71]) as Uint8Array<ArrayBuffer>,
+    mime: "image/png",
+  };
+  const result = cropToDocument(image, null, 0, 90);
+  assert.equal(result.turned, 0);
+  assert.equal(result.bytes, image.bytes);
 });

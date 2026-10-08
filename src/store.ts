@@ -10,6 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { config } from "./config.ts";
+import { day } from "./day.ts";
 
 export type Pilgrim = {
   id: number;
@@ -237,16 +238,17 @@ export class Store {
    * `cost` bir necha rasm birga kelganda ishlatiladi.
    */
   countAttempt(chatId: number, cost = 1, limit = config.dailyLimit): boolean {
-    const day = new Date().toISOString().slice(0, 10);
+    // O'zbekiston kuni: chegara yarim kechada yangilanadi, UTC 05:00 da emas
+    const today = day();
     this.db
       .prepare(
         `insert into attempts (chat_id, day, count) values (?, ?, ?)
          on conflict (chat_id, day) do update set count = count + ?`,
       )
-      .run(chatId, day, cost, cost);
+      .run(chatId, today, cost, cost);
     const row = this.db
       .prepare("select count from attempts where chat_id = ? and day = ?")
-      .get(chatId, day) as { count: number } | undefined;
+      .get(chatId, today) as { count: number } | undefined;
     return (row?.count ?? 0) <= limit;
   }
 

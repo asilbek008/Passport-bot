@@ -64,10 +64,41 @@ Shu nom Excelda ustun bo'lib chiqadi va rasm faylining nomiga kiradi.
 
 ---
 
-## O'rnatish — uch buyruq
+## O'rnatish
 
 Node.js **22.6 yoki yuqori** kerak (`node:sqlite` va TypeScript'ni to'g'ridan-to'g'ri
 ishga tushirish uchun). [nodejs.org](https://nodejs.org) dan LTS nusxasini oling.
+
+### Windows: ikki marta bosish kifoya
+
+Terminal bilan ishlashni istamasangiz, `windows` papkasidagi fayllarni
+tartib bilan ikki marta bosasiz:
+
+| Fayl | Nima qiladi |
+|---|---|
+| **1-ornatish.bat** | Node.js borligini tekshiradi, paketlarni o'rnatadi, sozlamalarni so'raydi va tekshiradi |
+| **2-boshlash.bat** | Botni ishga tushiradi. Bot to'xtab qolsa **o'zi qayta ishga tushadi** |
+| **3-avtomatik.bat** | Kompyuterga kirganda bot o'zi ishga tushadigan qiladi (yoqish / o'chirish / holat) |
+| **4-zaxira.bat** | Zaxira oladi |
+
+Birinchi marta `1-ornatish.bat`, keyin `2-boshlash.bat`. Node.js
+o'rnatilmagan bo'lsa birinchi fayl nima qilish kerakligini o'zi aytadi.
+
+**Bot oyna yopiq turganda ishlamaydi.** `2-boshlash.bat` oynasini yopsangiz
+bot to'xtaydi. Shuning uchun `3-avtomatik.bat` bilan avtomatik ishga
+tushirishni yoqib qo'ying: shunda bot orqa fonda, oynasiz ishlaydi va
+kompyuterga kirganingizda o'zi ko'tariladi.
+
+Avtomatik ishga tushirish Windows'ning *Startup* papkasiga yorliq
+qo'yadi (`Win+R` → `shell:startup`), ya'ni administrator huquqi kerak
+emas va o'chirish uchun yorliqni o'chirish kifoya.
+
+**Bot ikki marta ishga tushmaydi:** avtomatik ishga tushgan bot allaqachon
+ishlayotgan bo'lsa, `2-boshlash.bat` buni aniqlaydi va to'xtaydi. Bu ataylab —
+bitta tokenni ikki joyda ishlatsa Telegram ikkisini ham rad etadi (409) va
+xabarlar yo'qoladi.
+
+### Terminal bilan
 
 ```bash
 npm install     # bog'liqliklarni o'rnatadi
@@ -255,6 +286,13 @@ saqlanadi, agar u:
 JPEG bo'lmagan rasm ham qirqilmaydi (`jpeg-js` faqat JPEG biladi;
 Telegram oddiy rasmni JPEG qilib beradi, shuning uchun bu kamdan-kam).
 
+**Yonboshlagan rasm ham to'g'rilanadi.** Model hujjatning burilishini ham
+aytadi (`rotation`: 0, 90, 180 yoki 270) va rasm to'g'ri holatga buriladi —
+konsullikka yonboshlagan pasport yuklashga to'g'ri kelmaydi. Burish va
+qirqish **birga** bajariladi, shuning uchun rasm bir marta qayta siqiladi.
+Bu yerda ham xuddi shu qoida: model holatni aniq aytmasa (masalan 45°),
+rasmga tegilmaydi.
+
 Butunlay o'chirish: `.env` da `CROP=off`.
 
 ### Yaxshi rasm uchun
@@ -396,6 +434,55 @@ Agar siz **litsenziyali umra operatori** bo'lsangiz, Nusuk Masar / eHaj
 tizimida operator hisobingiz bor — guruh holatini rasmiy ravishda **o'sha
 yerdan** olish eng ishonchli yo'l, chunki u MOFA ma'lumotining asl manbasi.
 
+## Zaxira — ma'lumotni yo'qotmaslik uchun
+
+`data/umra.db` bitta fayl, rasmlar bitta papka. Disk buzilsa yoki
+kompyuter yo'qolsa — hamma pasport ma'lumoti ketadi va qaytarib
+bo'lmaydi. Shuning uchun:
+
+```bash
+npm run zaxira     # yoki: windows\4-zaxira.bat
+```
+
+Baza va rasmlar **bitta shifrlangan faylga** yig'iladi:
+`zaxira/umra-zaxira-2026-10-08.umz`. Shu faylni flesh-diskka yoki boshqa
+kompyuterga ko'chirib qo'yasiz. Oyiga bir marta yangilab turish kifoya.
+
+**Nega shifrlangan:** zaxirada mijozlarning pasport skanlari bor. Oddiy
+zip'ni fleshga tashlab, o'sha fleshni yo'qotish — ma'lumot tarqalishi
+bilan barobar. Shifr AES-256-GCM, kalit paroldan `scrypt` bilan olinadi.
+Parolsiz faylni **hech kim** ocha olmaydi — men ham.
+
+> **Parolni yozib qo'ying.** Parolsiz zaxira foydasiz. Parolni tiklash
+> yo'li yo'q — bu shifrning kamchiligi emas, mohiyati.
+
+GCM faqat shifrlamaydi, buzilganini ham **aniqlaydi**: fayl yarim
+ko'chirilgan yoki o'zgargan bo'lsa, tiklashda xato beradi — jim turib
+buzuq ma'lumot bermaydi.
+
+Tiklash:
+
+```bash
+npm run tiklash zaxira/umra-zaxira-2026-10-08.umz
+```
+
+Tiklash hozirgi ma'lumot ustiga yozadi, lekin avval nima borligini
+ko'rsatib tasdiq so'raydi, hozirgi bazani esa `umra.db.eski-<sana>`
+qilib saqlab qo'yadi — noto'g'ri faylni tiklab yuborsangiz orqaga
+qaytarish mumkin bo'lsin.
+
+Avtomatik zaxira kerak bo'lsa, parolni muhitdan berasiz:
+
+```bash
+set ZAXIRA_PAROL=parolingiz
+npm run zaxira
+```
+
+Bulutga yuklash **ataylab yo'q**: mijozlarning pasport skanlarini qayerga
+saqlash — sizning qaroringiz, men ularni begona xizmatga yubormayman.
+
+---
+
 ## Maxfiylik
 
 Bu mijozlarning shaxsiy hujjatlari. Bot shunga qarab qurilgan:
@@ -448,7 +535,11 @@ src/
   zip.ts        ZIP arxiv tuzish (zlib bilan, kutubxonasiz)
   visa.ts       Viza turi va holatini kuzatish
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
-  crop.ts       Rasmni hujjatning o'ziga qirqish (shubha bo'lsa — qirqmaydi)
+  crop.ts       Rasmni hujjatning o'ziga qirqish va to'g'rilash
+  day.ts        Kun - O'zbekiston vaqti bo'yicha (UTC emas)
+  lock.ts       Bot bir vaqtda bitta bo'lib ishlashi
+  backup.ts     Zaxirani shifrlash va ochish
+  ask.ts        Terminalda savol (stdin yopilsa qotib qolmaydi)
   throttle.ts   So'rovlarni taqsimlash va qayta urinish (API chegarasi)
   image-pick.ts Qaysi o'lchamdagi rasmni olish (chegaraga sig'adigan eng kattasi)
   bot.ts        Suhbat mantig'i (bog'liqliklar tashqaridan — testdan o'tadi)
@@ -461,12 +552,19 @@ src/
 scripts/
   setup.ts      `npm run setup` — .env ni savol-javob bilan to'ldiradi
   tekshir.ts    `npm run tekshir` — sozlamalar tashxisi
+  zaxira.ts     `npm run zaxira` — shifrlangan zaxira
+  tiklash.ts    `npm run tiklash <fayl>` — zaxiradan qaytarish
+windows/
+  1-ornatish.bat    o'rnatish (ikki marta bosiladi)
+  2-boshlash.bat    ishga tushirish, o'zi qayta ko'tariladi
+  3-avtomatik.bat   kompyuterga kirganda avtomatik ishga tushirish
+  4-zaxira.bat      zaxira olish
 ```
 
 Tekshirish:
 
 ```bash
-npm test         # 211 test
+npm test         # 252 test
 npm run typecheck
 ```
 
@@ -553,6 +651,15 @@ qayta urinib ko'rgan. Bir-ikki daqiqa kutib qayta yuboring; takrorlansa
 
 **Qimmatga tushyapti** — `.env` da `MODEL=claude-haiku-4-5` qilib ko'ring,
 lekin avval 10–15 pasportda sinab, natijalarni qo'lda tekshirib chiqing.
+
+**«Bot allaqachon ishlayapti»** — bot avtomatik ishga tushgan va orqa
+fonda ishlayapti, ikkinchi nusxa esa ataylab to'xtatildi. Holatni
+tekshirish: `windows\3-avtomatik.bat` → 3. Bu xato emas — bot ishlayapti,
+Telegramda tekshirib ko'ring.
+
+**«Bu bot BOSHQA joyda ham ishlayapti» (409)** — bitta token ikki
+kompyuterda yoki serverda ishlatilgan. Bittasini to'xtatasiz, yoki
+@BotFather dan ikkinchi bot olib alohida token berasiz.
 
 **Bot to'xtab qoldi** — `npm start` ni qaytadan ishga tushiring. Uzilish
 vaqtida kelgan xabarlar Telegram serverida turadi va bot qaytgach o'qiladi.
