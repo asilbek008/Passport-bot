@@ -215,6 +215,36 @@ chegarasi 50 MB. Bunda guruhlarga bo'lib oling.
 - pasport tekis va to'liq ko'rinsin, burchaklari kesilmasin
 - **pastdagi ikki qator aniq bo'lsin** — bot asosan shuni o'qiydi
 - telefonni qiyshaytirmasdan, to'g'ri ushlab
+- **oddiy rasm sifatida yuboring** (*File* emas) — Telegram o'zi siqadi,
+  MRZ shunda ham o'qiladi
+
+Fayl (*File*) sifatida yuborilgan telefon rasmi 5–9 MB bo'ladi va API'da
+tushunarsiz xato berardi. Endi `IMAGE_MAX_MB` (standart 3.5) dan kattasi
+darhol rad etiladi va nima qilish kerakligi aytiladi — 30 rasmni yuborib,
+oxirida "bo'lmadi" degan javob olishdan yaxshiroq.
+
+### Ko'p rasm yuborilganda: tezlik va chegara
+
+Bot API'ga **daqiqada `REQUESTS_PER_MINUTE` so'rov** yuboradi va so'rovlarni
+teng taqsimlaydi:
+
+| Provayder | Standart | Nega |
+|---|---|---|
+| Gemini | 10 / daqiqa | bepul tarifda chegara 10–15 |
+| Anthropic | 40 / daqiqa | chegarasi balandroq |
+
+Ya'ni 30 rasmlik guruh ~3 daqiqada o'qiladi. Bu ataylab: avval bot
+to'xtamasdan yuborardi va 11-rasmda chegaraga urilib, **butun to'plam
+to'xtab qolardi**. Tezlikdan ko'ra to'xtamasligi muhim.
+
+Baribir chegaraga urilsa (masalan ikki xodim bir vaqtda ishlayotgan bo'lsa),
+bot kutib **3 marta qayta urinadi** (2s, 4s). Shundan keyin ham bo'lmasa —
+to'plam to'xtaydi va "bu vaqtincha muammo, bir-ikki daqiqadan keyin qayta
+yuboring" deb aytadi.
+
+Kalit xato yoki hisobda mablag' yo'q bo'lsa — qayta urinmaydi: bunday xato
+o'zi tuzalmaydi, 30 so'rovni bekorga sarflashdan ma'no yo'q. Pullik tarifda
+`REQUESTS_PER_MINUTE` ni oshirsangiz bo'ladi.
 
 ---
 
@@ -370,6 +400,8 @@ src/
   zip.ts        ZIP arxiv tuzish (zlib bilan, kutubxonasiz)
   visa.ts       Viza turi va holatini kuzatish
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
+  throttle.ts   So'rovlarni taqsimlash va qayta urinish (API chegarasi)
+  image-pick.ts Qaysi o'lchamdagi rasmni olish (chegaraga sig'adigan eng kattasi)
   bot.ts        Suhbat mantig'i (bog'liqliklar tashqaridan — testdan o'tadi)
   telegram.ts   Bot API (faqat fetch, SDK'siz)
   invites.ts    Xodimni qo'shish uchun bir martalik kodlar
@@ -385,7 +417,7 @@ scripts/
 Tekshirish:
 
 ```bash
-npm test         # 147 test
+npm test         # 182 test
 npm run typecheck
 ```
 
@@ -457,6 +489,18 @@ natija beradi.
 
 **«Tekshiruvdan o'tmadi»** — bu xato emas, himoya: bot bitta belgini noto'g'ri
 o'qiganini o'zi aniqladi va ishonchsiz ma'lumotni saqlamadi. Qaytadan suratga oling.
+
+**«Rasm juda katta»** — rasm *File* sifatida yuborilgan. Telegramda rasmni
+qo'shishda *File* emas, oddiy **rasm** (galereya) sifatida yuboring — Telegram
+o'zi siqib beradi va MRZ shunda ham o'qiladi.
+
+**30 rasm sekin o'qilyapti** — bu ataylab: API chegarasiga urilmaslik uchun
+so'rovlar daqiqada `REQUESTS_PER_MINUTE` (Geminida 10) qilib taqsimlanadi.
+Pullik tarifda `.env` da oshirib qo'ying.
+
+**«To'xtatildi — bu vaqtincha muammo»** — API chegarasiga urildi. Bot 3 marta
+qayta urinib ko'rgan. Bir-ikki daqiqa kutib qayta yuboring; takrorlansa
+`REQUESTS_PER_MINUTE` ni pasaytiring.
 
 **Qimmatga tushyapti** — `.env` da `MODEL=claude-haiku-4-5` qilib ko'ring,
 lekin avval 10–15 pasportda sinab, natijalarni qo'lda tekshirib chiqing.

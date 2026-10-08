@@ -15,6 +15,7 @@ import { readDocument, providerInfo } from "./read.ts";
 import { Batcher } from "./batch.ts";
 import { Invites } from "./invites.ts";
 import { deletePhotos } from "./photos.ts";
+import { Throttle } from "./throttle.ts";
 import { handleUpdate, processBatch, COMMANDS, type Deps } from "./bot.ts";
 
 const CODE_TTL_MINUTES = 60;
@@ -68,6 +69,8 @@ if (problems.length > 0) {
 const tg = new Telegram(config.botToken);
 const store = new Store();
 const invites = new Invites(CODE_TTL_MINUTES);
+// So'rovlarni taqsimlaydi — API chegarasiga urilmaslik uchun
+const throttle = new Throttle(config.requestsPerMinute);
 
 // To'plam: rasmlar yig'iladi, keyin birga o'qiladi.
 // `deps` ni ichida ishlatgani uchun pastda e'lon qilinadi.
@@ -87,6 +90,7 @@ const deps: Deps = {
     return true;
   },
   newCode: () => ({ code: invites.create(), minutes: CODE_TTL_MINUTES }),
+  throttle,
 };
 
 let running = true;
@@ -209,6 +213,10 @@ async function main() {
   console.log(`Bot ishga tushdi: @${me.username}`);
   const provider = providerInfo();
   console.log(`O'qish: ${provider.name} / ${provider.model}`);
+  console.log(
+    `Tezlik: daqiqada ${config.requestsPerMinute} so'rov` +
+      (throttle.interval > 0 ? ` (${throttle.interval / 1000}s oraliq)` : " (taqsimlashsiz)"),
+  );
   console.log(`Saqlash muddati: ${config.retentionDays} kun`);
   console.log(`Bazadagi yozuvlar: ${store.count()}`);
 

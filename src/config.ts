@@ -126,6 +126,34 @@ export const config = {
   get batchWaitMs(): number {
     return num("BATCH_WAIT_MS", 2500);
   },
+
+  /**
+   * Daqiqada API'ga shuncha so'rovdan ko'p yuborilmaydi.
+   *
+   * Gemini BEPUL tarifida chegara daqiqada 10–15, shuning uchun standarti
+   * 10: 30 rasm 3 daqiqada o'qiladi, lekin TO'XTAB QOLMAYDI. Pullik
+   * tarifda yoki Anthropic'da bu chegara ancha baland — o'shanda
+   * REQUESTS_PER_MINUTE ni oshirsangiz tezroq ishlaydi.
+   * 0 — taqsimlashni butunlay o'chiradi.
+   */
+  get requestsPerMinute(): number {
+    const given = process.env.REQUESTS_PER_MINUTE;
+    if (given !== undefined) return num("REQUESTS_PER_MINUTE", 10);
+    // Berilmasa: Gemini'da ehtiyotkor, Anthropic'da erkinroq
+    return this.provider === "gemini" ? 10 : 40;
+  },
+
+  /**
+   * Bitta rasmning eng katta hajmi (MB).
+   *
+   * Nega 3.5: rasm API'ga base64 bo'lib yuboriladi va hajmi ~1.33 barobar
+   * oshadi, ya'ni 3.5 MB → ~4.7 MB. Anthropic'ning bir rasmga chegarasi
+   * 5 MB, shuning uchun bu xavfsiz. Oshsa — tushunarsiz API xatosi
+   * o'rniga xodimga "oddiy rasm sifatida yuboring" deyiladi.
+   */
+  get imageMaxBytes(): number {
+    return Math.round(num("IMAGE_MAX_MB", 3.5) * 1024 * 1024);
+  },
 };
 
 export function isOperator(chatId: number | string): boolean {

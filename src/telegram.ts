@@ -35,6 +35,35 @@ export class TelegramError extends Error {
   }
 }
 
+/** Telegramning fayl izohi chegarasi. */
+export const CAPTION_LIMIT = 1024;
+
+/**
+ * Izohni chegaraga sig'diradi.
+ *
+ * Qator o'rtasidan kesmaslikka harakat qiladi, va Markdown belgisi
+ * yarmida uzilib qolmasligi uchun oxirida toq qolgan `*` ni olib
+ * tashlaydi (aks holda Telegram butun xabarni rad etardi).
+ */
+export function clipCaption(caption: string, limit = CAPTION_LIMIT): string {
+  if (caption.length <= limit) return caption;
+
+  const room = limit - 1; // oxiridagi "…" uchun joy
+  let cut = caption.slice(0, room);
+
+  // Qatorning o'rtasida uzmaymiz, agar yaqin orada qator oxiri bo'lsa
+  const lastBreak = cut.lastIndexOf("\n");
+  if (lastBreak > room * 0.6) cut = cut.slice(0, lastBreak);
+
+  // Toq qolgan Markdown belgilarini olib tashlaymiz
+  for (const mark of ["*", "_", "`"]) {
+    const count = cut.split(mark).length - 1;
+    if (count % 2 === 1) cut = cut.slice(0, cut.lastIndexOf(mark));
+  }
+
+  return `${cut.trimEnd()}…`;
+}
+
 export class Telegram {
   private readonly token: string;
 
@@ -132,7 +161,13 @@ export class Telegram {
     return { bytes, mime };
   }
 
-  /** Excel faylini yuboradi (multipart — SDK'siz). */
+  /**
+   * Excel yoki zip faylini yuboradi (multipart — SDK'siz).
+   *
+   * Izoh 1024 belgidan uzun bo'lsa Telegram butun so'rovni rad etadi —
+   * ya'ni FAYL HAM yuborilmaydi. Shuning uchun izoh qisqartiriladi:
+   * fayl izohdan muhimroq.
+   */
   async sendDocument(
     chatId: number,
     name: string,
@@ -142,7 +177,7 @@ export class Telegram {
     const form = new FormData();
     form.set("chat_id", String(chatId));
     if (caption) {
-      form.set("caption", caption);
+      form.set("caption", clipCaption(caption));
       form.set("parse_mode", "Markdown");
     }
     form.set(

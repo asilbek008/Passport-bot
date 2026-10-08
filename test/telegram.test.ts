@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Telegram, TelegramError } from "../src/telegram.ts";
+import { Telegram, TelegramError, clipCaption, CAPTION_LIMIT } from "../src/telegram.ts";
 
 const realFetch = globalThis.fetch;
 
@@ -122,6 +122,71 @@ test("Telegram xatosi tavsifi bilan qaytadi", async () => {
       assert.match(err.message, /sendMessage/, "qaysi usul xato berganini ko'rsatadi");
       return true;
     },
+  );
+});
+
+// --- Fayl izohi (caption) ---
+//
+// Bu haqiqiy xato edi: 10 ta pasport bilan izoh 1024 belgidan oshib ketardi,
+// Telegram esa butun so'rovni rad etadi — ya'ni ZIP FAYL HAM yuborilmaydi.
+
+test("qisqa izoh o'zgarmaydi", () => {
+  assert.equal(clipCaption("Tayyor: 3 ta hujjat"), "Tayyor: 3 ta hujjat");
+});
+
+test("chegaraning o'zi o'zgarmaydi", () => {
+  const exact = "a".repeat(CAPTION_LIMIT);
+  assert.equal(clipCaption(exact), exact);
+});
+
+test("uzun izoh chegaraga sig'diriladi", () => {
+  const long = "a".repeat(CAPTION_LIMIT + 500);
+  const clipped = clipCaption(long);
+  assert.ok(
+    clipped.length <= CAPTION_LIMIT,
+    `${clipped.length} belgi — chegaradan oshdi`,
+  );
+  assert.match(clipped, /…$/, "qisqartirilgani ko'rinishi kerak");
+});
+
+test("qator o'rtasidan emas, qator oxiridan kesiladi", () => {
+  const line = `${"ALIYEV ALI".padEnd(40, " ")}\n`;
+  const long = line.repeat(40); // ~1640 belgi
+  const clipped = clipCaption(long);
+  assert.ok(clipped.length <= CAPTION_LIMIT);
+  // Oxirgi qator yarmida uzilib qolmasligi kerak
+  assert.equal(clipped.replace(/…$/, "").includes("ALIYE\n"), false);
+  assert.match(clipped, /ALIYEV ALI/);
+});
+
+test("toq qolgan Markdown belgisi olib tashlanadi", () => {
+  // *qalin* ning yarmida uzilsa, Telegram butun xabarni rad etadi
+  const long = `${"x".repeat(CAPTION_LIMIT - 5)}*ALIYEV ALI* qolgani`;
+  const clipped = clipCaption(long);
+  assert.ok(clipped.length <= CAPTION_LIMIT);
+  const stars = clipped.split("*").length - 1;
+  assert.equal(stars % 2, 0, `toq son yulduzcha qoldi: ${stars}`);
+});
+
+test("sendDocument izohni o'zi qisqartiradi — fayl izohdan muhimroq", async () => {
+  let sentCaption: string | null = null;
+  globalThis.fetch = (async (_url: string, init: { body: FormData }) => {
+    sentCaption = String(init.body.get("caption"));
+    return new Response(JSON.stringify({ ok: true, result: {} }));
+  }) as unknown as typeof fetch;
+
+  const tg = new Telegram("token");
+  await tg.sendDocument(
+    1,
+    "hujjatlar.zip",
+    new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer>,
+    "ALIYEV ALI\n".repeat(200),
+  );
+
+  assert.ok(sentCaption !== null, "izoh yuborilishi kerak");
+  assert.ok(
+    (sentCaption as unknown as string).length <= CAPTION_LIMIT,
+    "Telegramga chegaradan uzun izoh yuborilmasligi kerak",
   );
 });
 

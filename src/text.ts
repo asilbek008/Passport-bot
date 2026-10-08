@@ -8,6 +8,7 @@
 
 import { config } from "./config.ts";
 import type { Pilgrim } from "./store.ts";
+import { humanSize } from "./image-pick.ts";
 import {
   VISA_LABELS,
   VISA_ICON,
@@ -156,6 +157,21 @@ export const t = {
 
   groupsNotAllowed:
     "Bu bot faqat shaxsiy suhbatda ishlaydi — hujjatni guruhga yubormang.",
+
+  /** Rasm chegaradan katta — tushunarsiz API xatosi o'rniga aniq maslahat. */
+  imageTooBig: (bytes: number, limit: number) =>
+    [
+      `Rasm juda katta: ${humanSize(bytes)} (chegara ${humanSize(limit)}).`,
+      "",
+      "Fayl (File) sifatida yuborilgan rasm siqilmaydi, shuning uchun",
+      "katta bo'lib qoladi. Ikki yechim:",
+      "",
+      "• rasmni *oddiy rasm* sifatida yuboring (Telegram o'zi siqadi) —",
+      "  MRZ shunda ham o'qiladi;",
+      "• yoki telefonda kamera sifatini pasaytiring.",
+    ].join("\n"),
+
+  imageUnavailable: "Rasmni olib bo'lmadi — qayta yuborib ko'ring.",
 
   sendPhoto: [
     "Pasport sahifasining *rasmini* yuboring.",

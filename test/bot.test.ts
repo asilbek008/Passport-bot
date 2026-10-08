@@ -98,7 +98,13 @@ function okResult(mrzText: string): ReadResult {
 
 type Sent = { chatId: number; text: string };
 
-function makeDeps(reads: Record<string, ReadResult | "throw">) {
+/**
+ * Bitta rasm uchun javob. Massiv berilsa — har chaqiruvda keyingisi
+ * qaytadi (qayta urinishni sinash uchun), oxirgisi takrorlanadi.
+ */
+type Reply = ReadResult | "throw";
+
+function makeDeps(reads: Record<string, Reply | Reply[]>) {
   const sent: Sent[] = [];
   const edits: Sent[] = [];
   const documents: {
@@ -152,10 +158,17 @@ function makeDeps(reads: Record<string, ReadResult | "throw">) {
     currentFile = id;
     return { bytes: new Uint8Array(8), mime: "image/jpeg" };
   };
+  /** Har rasm bo'yicha nechta so'rov ketdi — qayta urinishni sanash uchun */
+  const calls: Record<string, number> = {};
   deps.read = (async () => {
-    const r = reads[currentFile];
+    const setting = reads[currentFile];
+    if (!setting) throw new Error(`test sozlanmagan: ${currentFile}`);
+    const seen = calls[currentFile] ?? 0;
+    calls[currentFile] = seen + 1;
+    const r = Array.isArray(setting)
+      ? setting[Math.min(seen, setting.length - 1)]
+      : setting;
     if (r === "throw") throw new Error("sinov xatosi");
-    if (!r) throw new Error(`test sozlanmagan: ${currentFile}`);
     return r;
   }) as never;
 
@@ -171,7 +184,7 @@ function makeDeps(reads: Record<string, ReadResult | "throw">) {
     minutes: 60,
   });
 
-  return { deps, sent, edits, documents, queued, store, invites };
+  return { deps, sent, edits, documents, queued, store, invites, calls };
 }
 
 const photoUpdate = (chatId: number, fileId: string): TgUpdate => ({
@@ -836,4 +849,172 @@ test("uzun hisobot Telegram chegarasiga bo'linadi", () => {
   const parts = splitMessage(lines.join("\n"));
   for (const p of parts) assert.ok(p.length <= 3900);
   assert.equal(parts.join("\n").split("\n").length, 60);
+});
+
+// --- Juda katta rasm ---
+//
+// Fayl (File) sifatida yuborilgan telefon rasmi 5–9 MB bo'ladi. Avval u
+// navbatga tushib, API'da tushunarsiz xato berardi. Endi darhol aytiladi.
+
+test("juda katta fayl navbatga tushmaydi, tushuntirib aytiladi", async () => {
+  const { deps, sent, queued } = makeDeps({});
+  await handleUpdate(
+    {
+      update_id: 1,
+      message: {
+        message_id: 1,
+        chat: { id: OPERATOR, type: "private" },
+        document: { file_id: "huge", mime_type: "image/jpeg", file_size: 9 * 1024 * 1024 },
+      },
+    },
+    deps as never,
+  );
+  assert.equal(queued.length, 0, "katta rasmni o'qishga urinmaymiz");
+  assert.match(sent.at(-1)!.text, /juda katta/);
+  assert.match(sent.at(-1)!.text, /9\.0 MB/, "hajmi aytilishi kerak");
+  assert.match(sent.at(-1)!.text, /oddiy rasm/, "yechimi aytilishi kerak");
+  deps.store.close();
+});
+
+test("sig'adigan fayl odatdagidek navbatga tushadi", async () => {
+  const { deps, queued } = makeDeps({});
+  await handleUpdate(
+    {
+      update_id: 1,
+      message: {
+        message_id: 1,
+        chat: { id: OPERATOR, type: "private" },
+        document: { file_id: "ok", mime_type: "image/jpeg", file_size: 2 * 1024 * 1024 },
+      },
+    },
+    deps as never,
+  );
+  assert.deepEqual(queued, [{ chatId: OPERATOR, fileId: "ok" }]);
+  deps.store.close();
+});
+
+test("hamma nusxasi katta bo'lgan rasm rad etiladi", async () => {
+  const { deps, sent, queued } = makeDeps({});
+  await handleUpdate(
+    {
+      update_id: 1,
+      message: {
+        message_id: 1,
+        chat: { id: OPERATOR, type: "private" },
+        photo: [
+          { file_id: "a", width: 2000, height: 1500, file_size: 5 * 1024 * 1024 },
+          { file_id: "b", width: 4000, height: 3000, file_size: 9 * 1024 * 1024 },
+        ],
+      },
+    },
+    deps as never,
+  );
+  assert.equal(queued.length, 0);
+  assert.match(sent.at(-1)!.text, /juda katta/);
+  deps.store.close();
+});
+
+// --- Taqsimlash va qayta urinish ---
+
+test("har rasmdan oldin navbat kutiladi — API chegarasiga urilmaslik uchun", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const mrz2 = td3({
+    surname: "ISMOILOV", given: "DAVRON", docNumber: "AB7654321",
+    birth: "900101", sex: "M", expiry: "320202",
+  });
+  const { deps, store } = makeDeps({ f1: okResult(mrz), f2: okResult(mrz2) });
+
+  let waits = 0;
+  (deps as Record<string, unknown>).throttle = {
+    wait: async () => {
+      waits++;
+    },
+  };
+
+  await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+  assert.equal(waits, 2, "har rasmga bitta navbat");
+  assert.equal(store.count(), 2);
+  store.close();
+});
+
+test("vaqtincha API xatosi qayta urinib ko'riladi va to'plam davom etadi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const busy: ReadResult = {
+    ok: false,
+    reason: "api_error",
+    problem: "Server band (429)",
+    retryable: true,
+  };
+  const { deps, store, calls, edits } = makeDeps({
+    // Birinchi urinish — "band", ikkinchisi muvaffaqiyatli
+    f1: [busy, okResult(mrz)],
+  });
+
+  const slept: number[] = [];
+  (deps as Record<string, unknown>).sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 2, "bir marta qayta urinish bo'lishi kerak");
+  assert.deepEqual(slept, [2000], "qayta urinishdan oldin kutiladi");
+  assert.equal(store.count(), 1, "ikkinchi urinish natijasi saqlanadi");
+  assert.match(edits.at(-1)!.text, /KARIMOV/, "hisobot odatdagidek chiqadi");
+  store.close();
+});
+
+test("tuzalmaydigan API xatosi qayta urinmaydi va darhol to'xtaydi", async () => {
+  const badKey: ReadResult = {
+    ok: false,
+    reason: "api_error",
+    problem: "API kaliti qabul qilinmadi",
+    retryable: false,
+  };
+  const { deps, store, calls, edits } = makeDeps({ f1: badKey, f2: badKey });
+
+  const slept: number[] = [];
+  (deps as Record<string, unknown>).sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+
+  await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+
+  assert.equal(calls.f1, 1, "kalit xato bo'lsa qayta urinishdan ma'no yo'q");
+  assert.equal(calls.f2, undefined, "qolgan rasmlarga umuman urinilmaydi");
+  assert.deepEqual(slept, [], "bekorga kutilmaydi");
+  assert.equal(store.count(), 0);
+  assert.match(edits.at(-1)!.text, /To'xtatildi/);
+  assert.match(edits.at(-1)!.text, /kaliti qabul qilinmadi/, "sabab aytiladi");
+  assert.match(edits.at(-1)!.text, /qayta yuborish yordam bermaydi/);
+  store.close();
+});
+
+test("qayta urinishlar tugasa to'plam to'xtaydi, vaqtincha deb aytiladi", async () => {
+  const busy: ReadResult = {
+    ok: false,
+    reason: "api_error",
+    problem: "Kunlik chegara tugadi (429)",
+    retryable: true,
+  };
+  const { deps, store, calls, edits } = makeDeps({ f1: busy });
+
+  const slept: number[] = [];
+  (deps as Record<string, unknown>).sleep = async (ms: number) => {
+    slept.push(ms);
+  };
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 3, "3 marta urinib ko'riladi");
+  assert.deepEqual(slept, [2000, 4000], "kutish vaqti ikki barobar oshadi");
+  assert.equal(store.count(), 0);
+  assert.match(edits.at(-1)!.text, /bir-ikki daqiqadan keyin qayta yuboring/);
+  store.close();
 });

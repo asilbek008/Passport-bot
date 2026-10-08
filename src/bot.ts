@@ -17,6 +17,8 @@ import { splitMessage } from "./batch.ts";
 import { buildWorkbook, workbookName, workbookCaption, passportState } from "./excel.ts";
 import { documentType, photoBaseName } from "./document-type.ts";
 import { parseVisaType, type VisaType } from "./visa.ts";
+import { withRetry } from "./throttle.ts";
+import { pickPhoto, documentFits } from "./image-pick.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
 import {
   savePhoto,
@@ -44,6 +46,10 @@ export type Deps = {
   tryClaim?: (chatId: number, text: string) => boolean;
   /** Hamkasb uchun yangi bir martalik kod yaratadi. `index.ts` beradi. */
   newCode?: () => { code: string; minutes: number };
+  /** So'rovlarni taqsimlaydi (API chegarasiga urilmaslik uchun) */
+  throttle?: { wait: () => Promise<void> };
+  /** Qayta urinishlar orasida kutish — testda soxta qilinadi */
+  sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
 };
 
@@ -108,7 +114,13 @@ export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> 
   }
 
   if (hasPhoto(msg)) {
-    deps.enqueue(chatId, photoFileId(msg));
+    const chosen = chooseImage(msg);
+    if ("problem" in chosen) {
+      // Katta rasmni navbatga qo'yishdan ma'no yo'q — darhol aytamiz
+      await reply(deps.tg, chatId, chosen.problem);
+      return;
+    }
+    deps.enqueue(chatId, chosen.fileId);
     return;
   }
 
@@ -123,10 +135,31 @@ function hasPhoto(msg: NonNullable<TgUpdate["message"]>): boolean {
   );
 }
 
-/** Telegram bir rasmni bir necha o'lchamda beradi — eng kattasi kerak. */
-function photoFileId(msg: NonNullable<TgUpdate["message"]>): string {
-  if (msg.photo?.length) return msg.photo[msg.photo.length - 1].file_id;
-  return msg.document!.file_id;
+/**
+ * Qaysi rasmni olish kerakligini aniqlaydi.
+ *
+ * Eng kattasini emas, chegaraga SIG'ADIGAN eng kattasini oladi: base64 ga
+ * aylanganda hajm ~1.33 barobar oshadi va juda katta rasm API'da
+ * tushunarsiz xato beradi.
+ */
+function chooseImage(
+  msg: NonNullable<TgUpdate["message"]>,
+): { fileId: string } | { problem: string } {
+  const limit = config.imageMaxBytes;
+
+  if (msg.photo?.length) {
+    const picked = pickPhoto(msg.photo, limit);
+    if (!picked) return { problem: t.imageUnavailable };
+    if (picked.kind === "too_big") {
+      return { problem: t.imageTooBig(picked.bytes, limit) };
+    }
+    return { fileId: picked.fileId };
+  }
+
+  const doc = msg.document!;
+  const fits = documentFits(doc, limit);
+  if (!fits.ok) return { problem: t.imageTooBig(fits.bytes, limit) };
+  return { fileId: doc.file_id };
 }
 
 // --- Buyruqlar ---
@@ -486,7 +519,17 @@ export async function processBatch(
       );
     }
 
-    const outcome = await readOne(fileIds[i], deps, now);
+    // So'rovlarni taqsimlaymiz — API chegarasiga urilmaslik uchun
+    await deps.throttle?.wait();
+
+    // Vaqtincha xato (chegara, server band) bo'lsa qayta urinamiz:
+    // 30 rasmlik to'plam bitta "band" javobidan to'xtamasligi kerak
+    const attempt = await withRetry(
+      () => readOne(fileIds[i], deps, now),
+      (result) => result.kind === "api" && result.retryable,
+      { tries: 3, baseMs: 2000, sleep: deps.sleep },
+    );
+    const outcome = attempt.value;
 
     // API ishlamasa to'plamni to'xtatamiz: qolgan 29 rasmni o'qishga
     // urinish ham shu xato bilan tugaydi, faqat pul va vaqt ketadi
