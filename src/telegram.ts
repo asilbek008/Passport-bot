@@ -197,6 +197,25 @@ export class Telegram {
   }
 
   /**
+   * Bot tavsifi — xodim botni BIRINCHI marta ochganda, hali bitta ham
+   * xabar yo'q paytda, katta START tugmasi ustida ko'rinadi.
+   *
+   * `description` (512 belgigacha) — bo'sh suhbatda; `short_description`
+   * (120 belgigacha) — bot profilida. Ikkisi ham ixtiyoriy: o'rnatilmasa
+   * bot baribir ishlaydi, shuning uchun xato yutib yuboriladi.
+   */
+  async setDescriptions(description: string, shortDescription: string) {
+    try {
+      await this.call("setMyDescription", { description });
+      await this.call("setMyShortDescription", {
+        short_description: shortDescription,
+      });
+    } catch {
+      // Tavsif — qulaylik, ish emas
+    }
+  }
+
+  /**
    * Uzun so'rov. Telegram yangilik bo'lmasa `timeout` soniya kutib turadi,
    * shuning uchun bu tsikl protsessorni yemaydi.
    */

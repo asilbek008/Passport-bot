@@ -154,6 +154,29 @@ export const config = {
   get imageMaxBytes(): number {
     return Math.round(num("IMAGE_MAX_MB", 3.5) * 1024 * 1024);
   },
+
+  /**
+   * Rasmni hujjatning o'ziga qirqish (standart — yoqilgan).
+   *
+   * O'chirish kerak bo'lsa: `CROP=off`. Shunda rasm xodim yuborgan holida
+   * saqlanadi — qirqish natijasi yoqmasa, meni kutmasdan o'chirib qo'yish
+   * uchun shu kalit bor.
+   */
+  get crop(): boolean {
+    const value = (process.env.CROP ?? "").trim().toLowerCase();
+    return !["off", "0", "no", "yoq", "false"].includes(value);
+  },
+
+  /**
+   * Qirqishda hujjat chetiga qo'shiladigan bo'sh joy (kadr kengligining %).
+   *
+   * Model chegarani bir-ikki foiz ichkaridan ko'rsatishi mumkin, bu esa
+   * pasportning qirrasini kesib qo'yardi. 2% — qirrasi butun qoladi,
+   * lekin atrofdagi stol ham ko'rinmaydi.
+   */
+  get cropMarginPct(): number {
+    return num("CROP_MARGIN_PCT", 2);
+  },
 };
 
 export function isOperator(chatId: number | string): boolean {

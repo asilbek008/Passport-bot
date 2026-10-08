@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import { parseMrz, MrzError, type Mrz } from "./mrz.ts";
+import { parseBox, type Box } from "./crop.ts";
 import type { VisaType } from "./visa.ts";
 
 export const ReadSchema = z.object({
@@ -35,6 +36,14 @@ export const ReadSchema = z.object({
     // Ixtiyoriy: model bu maydonni yozishni unutsa, pasportni o'qish
     // butunlay buzilib ketmasligi kerak
     .optional(),
+  /**
+   * Hujjatning kadrdagi chegarasi: `[y0, x0, y1, x1]`, 0–1000 oralig'ida.
+   * Rasmni pasportning o'ziga qirqish uchun (`crop.ts`).
+   *
+   * Ixtiyoriy va ishonchsiz: bo'lmasa yoki shubhali bo'lsa rasm asl
+   * holida saqlanadi. MRZ o'qishga hech qanday ta'siri yo'q.
+   */
+  document_box: z.array(z.number()).nullable().optional(),
 });
 
 export const SYSTEM = `Sen hujjatdagi mashina o'qiydigan zonani (MRZ) ko'chirib yozadigan vositasan.
@@ -69,10 +78,20 @@ issue_date, place_of_birth va authority — MRZ da yo'q; ularni hujjatning
 ko'rinadigan qismidan o'qi, ko'rinmasa null qoldir (taxmin qilma).
 issue_date formati: yyyy-mm-dd.
 
+document_box — HUJJATNING kadrdagi chegarasi: [y0, x0, y1, x1], har biri
+0 dan 1000 gacha (rasm o'lchamidan qat'i nazar). Bu chegara bo'yicha rasm
+qirqiladi, shuning uchun:
+  • hujjatning HAMMASI ichida bo'lsin — to'rt burchagi ham, MRZ qatorlari
+    ham, chetlari ham. Shubha bo'lsa kengroq ko'rsat;
+  • hujjatdagi SURATNI yoki MRZ ni emas, hujjatning o'zini ko'rsat;
+  • pasport ochiq bo'lsa — faqat MRZ bor ma'lumot sahifasini;
+  • chegarani aniq ko'rsatolmasang document_box=null qoldir. Yarmi
+    kesilgan rasm qirqilmagan rasmdan yomonroq.
+
 JAVOB SHAKLI: faqat JSON obyekt, boshqa hech qanday matn yoki izohsiz:
 {"mrz_lines":["...","..."],"issue_date":null,"place_of_birth":null,
 "authority":null,"document_kind":"passport","mrz_readable":true,
-"problem":null,"visa_type":null}`;
+"problem":null,"visa_type":null,"document_box":[120,80,890,960]}`;
 
 export const USER_PROMPT = "Bu hujjatning MRZ qatorlarini ko'chirib yoz.";
 
@@ -85,6 +104,8 @@ export type ReadResult =
       authority: string | null;
       /** Viza yorlig'i bo'lsa — turi (tasdiqlanmagan, MRZ'da yo'q) */
       visaType: VisaType | null;
+      /** Hujjatning kadrdagi chegarasi — rasmni qirqish uchun; yo'q bo'lsa null */
+      box: Box | null;
     }
   | { ok: false; reason: "unreadable" | "not_a_document" | "refused"; problem: string }
   | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz }
@@ -199,5 +220,6 @@ export function interpret(text: string, today: Date): ReadResult {
     placeOfBirth: out.place_of_birth?.trim() || null,
     authority: out.authority?.trim() || null,
     visaType: out.visa_type ?? null,
+    box: parseBox(out.document_box),
   };
 }

@@ -15,7 +15,14 @@ export type Pilgrim = {
   id: number;
   /** Qaysi xodim kiritgan (Telegram chat id) */
   added_by: number;
-  /** Safar guruhi nomi, masalan "Umra mart" */
+  /**
+   * ESKI MAYDON, hozir har doim bo'sh.
+   *
+   * Avval `/guruh` buyrug'i bilan safar guruhi belgilanardi. Egasining
+   * talabi bo'yicha u olib tashlandi: xodim /start bosib rasm yuboradi,
+   * boshqa hech narsa qilmaydi. Ustun bazada qoldi — eski yozuvlar
+   * buzilmasligi uchun.
+   */
   group_label: string;
   surname: string;
   given_names: string;
@@ -36,7 +43,7 @@ export type Pilgrim = {
   doc_country: string;
   /** Hujjat turining to'liq nomi: "O'zbek pasporti" */
   doc_label: string;
-  /** Rasm fayli: `<guruh>/<FAMILIYA_ISM_turi>.jpg`. Yo'q bo'lsa null. */
+  /** Rasm fayli: `FAMILIYA_ISM_turi.jpg`. Yo'q bo'lsa null. */
   photo_file: string | null;
   /** "umra" | "single" | "multiple" … Viza yo'q bo'lsa null. */
   visa_type: string | null;
@@ -127,12 +134,6 @@ export class Store {
         day text not null,
         count integer not null default 0,
         primary key (chat_id, day)
-      );
-
-      -- Xodim hozir qaysi guruh bilan ishlayotgani
-      create table if not exists operator_state (
-        chat_id integer primary key,
-        group_label text not null default ''
       );
 
       -- Kim qachon eksport qilgani (ma'lumot kimga ketganini bilish uchun)
@@ -227,24 +228,6 @@ export class Store {
         .prepare("select chat_id from operators order by added_at")
         .all() as unknown as { chat_id: number }[]
     ).map((r) => r.chat_id);
-  }
-
-  // --- Xodimning joriy guruhi ---
-
-  currentGroup(chatId: number): string {
-    const row = this.db
-      .prepare("select group_label from operator_state where chat_id = ?")
-      .get(chatId) as { group_label: string } | undefined;
-    return row?.group_label ?? "";
-  }
-
-  setCurrentGroup(chatId: number, label: string) {
-    this.db
-      .prepare(
-        `insert into operator_state (chat_id, group_label) values (?, ?)
-         on conflict (chat_id) do update set group_label = excluded.group_label`,
-      )
-      .run(chatId, label);
   }
 
   // --- Cheklov ---
@@ -424,72 +407,52 @@ export class Store {
   }
 
   /** Vizasi belgilanmaganlar. */
-  withoutVisa(group?: string): Pilgrim[] {
-    return (
-      group
-        ? this.db
-            .prepare(
-              `select * from pilgrims where group_label = ? and visa_type is null
-               order by surname, given_names`,
-            )
-            .all(group)
-        : this.db
-            .prepare(
-              `select * from pilgrims where visa_type is null
-               order by group_label, surname, given_names`,
-            )
-            .all()
-    ) as unknown as Pilgrim[];
-  }
-
-  /** Guruhdagi (yoki hamma) yozuvlarning rasm yo'llari. */
-  photoPaths(group?: string): string[] {
-    const rows = (
-      group
-        ? this.db
-            .prepare(
-              "select photo_file from pilgrims where group_label = ? and photo_file is not null",
-            )
-            .all(group)
-        : this.db
-            .prepare("select photo_file from pilgrims where photo_file is not null")
-            .all()
-    ) as unknown as { photo_file: string }[];
-    return rows.map((r) => r.photo_file);
-  }
-
-  /** Hamma yozuv, yoki faqat bitta guruh. */
-  all(group?: string): Pilgrim[] {
-    if (group) {
-      return this.db
-        .prepare(
-          "select * from pilgrims where group_label = ? order by surname, given_names",
-        )
-        .all(group) as unknown as Pilgrim[];
-    }
+  withoutVisa(): Pilgrim[] {
     return this.db
-      .prepare("select * from pilgrims order by group_label, surname, given_names")
+      .prepare(
+        `select * from pilgrims where visa_type is null
+         order by surname, given_names`,
+      )
       .all() as unknown as Pilgrim[];
   }
 
-  /** Guruhlar va ulardagi kishilar soni. */
-  groups(): { label: string; count: number }[] {
-    return this.db
-      .prepare(
-        `select group_label as label, count(*) as count
-         from pilgrims group by group_label order by group_label`,
-      )
-      .all() as unknown as { label: string; count: number }[];
+  /** Hamma yozuvning rasm nomlari (nom to'qnashuvini aniqlash uchun). */
+  photoPaths(): string[] {
+    const rows = this.db
+      .prepare("select photo_file from pilgrims where photo_file is not null")
+      .all() as unknown as { photo_file: string }[];
+    return rows.map((r) => r.photo_file);
   }
 
-  count(group?: string): number {
-    const row = group
-      ? (this.db
-          .prepare("select count(*) as n from pilgrims where group_label = ?")
-          .get(group) as { n: number } | undefined)
-      : (this.db.prepare("select count(*) as n from pilgrims").get() as
-          | { n: number }
-          | undefined);
+  /** Hamma yozuv, familiya bo'yicha. */
+  all(): Pilgrim[] {
+    return this.db
+      .prepare("select * from pilgrims order by surname, given_names")
+      .all() as unknown as Pilgrim[];
+  }
+
+  /**
+   * Berilgan pasport raqamlari bo'yicha yozuvlar.
+   *
+   * Hozir o'qilgan to'plamni darhol Excel va arxiv qilib yuborish uchun
+   * kerak. Bazadan o'qiladi, chunki aynan SAQLANGAN holat muhim: pasport
+   * oldin yuborilgan bo'lsa, undagi viza ma'lumoti ham qo'shilib keladi.
+   */
+  byDocNumbers(docNumbers: string[]): Pilgrim[] {
+    if (docNumbers.length === 0) return [];
+    const marks = docNumbers.map(() => "?").join(",");
+    return this.db
+      .prepare(
+        `select * from pilgrims where doc_number in (${marks})
+         order by surname, given_names`,
+      )
+      .all(...(docNumbers as never[])) as unknown as Pilgrim[];
+  }
+
+  count(): number {
+    const row = this.db.prepare("select count(*) as n from pilgrims").get() as
+      | { n: number }
+      | undefined;
     return row?.n ?? 0;
   }
 
@@ -514,11 +477,6 @@ export class Store {
   /** Pasport raqami bo'yicha bitta yozuvni o'chiradi. */
   deleteByDocNumber(docNumber: string): { count: number; photos: string[] } {
     return this.removeWhere("doc_number = ?", docNumber);
-  }
-
-  /** Butun guruhni o'chiradi (safar tugagach). */
-  deleteGroup(group: string): { count: number; photos: string[] } {
-    return this.removeWhere("group_label = ?", group);
   }
 
   /** Muddati o'tgan yozuvlarni o'chiradi (saqlash muddati siyosati). */

@@ -17,6 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
     "@google/genai": "^2.27.0",
+    "jpeg-js": "^0.4.4",
     "write-excel-file": "^2.3.2",
     "zod": "^3.25.0"
   },

@@ -14,7 +14,7 @@
  */
 
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { config } from "./config.ts";
 
 /** Rasm turiga mos kengaytma. */
@@ -29,25 +29,6 @@ export function extensionFor(mime: string): string {
     default:
       return "jpg";
   }
-}
-
-/**
- * Guruh nomini papka nomiga aylantiradi. Guruh bo'lmasa `_guruhsiz`.
- * Faqat ASCII — zip va Windows bilan muammo bo'lmasligi uchun.
- */
-export function groupFolder(label: string): string {
-  const safe = label
-    .replace(/[Oo][‘’'`‘’]/g, (m) => (m[0] === "O" ? "O" : "o"))
-    .replace(/[Gg][‘’'`‘’]/g, (m) => (m[0] === "G" ? "G" : "g"))
-    .replace(/[‘’'`‘’]/g, "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^A-Za-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase()
-    .slice(0, 60);
-  return safe || "_guruhsiz";
 }
 
 /**
@@ -112,36 +93,22 @@ export function deletePhotos(paths: (string | null | undefined)[]): number {
   return removed;
 }
 
-/** Bo'shab qolgan guruh papkasini olib tashlaydi. */
-export function removeGroupFolder(label: string): void {
-  try {
-    rmSync(join(resolve(config.photosDir), groupFolder(label)), {
-      recursive: true,
-      force: true,
-    });
-  } catch {
-    // Papka yo'q bo'lsa ham muammo emas
-  }
-}
-
 /**
- * Yozuv uchun rasm yo'lini yasaydi: `<guruh>/<FAMILIYA_ISM_turi>.<kengaytma>`.
+ * Yozuv uchun rasm nomini yasaydi: `FAMILIYA_ISM_turi.<kengaytma>`.
  *
- * `taken` — boshqa yozuvlar egallagan yo'llar. Ikki xil odam bir xil
+ * `taken` — boshqa yozuvlar egallagan nomlar. Ikki xil odam bir xil
  * nomli bo'lsa, ikkinchisiga pasport raqami qo'shiladi: ismi bir xil
  * bo'lgani uchun birining rasmi yo'qolib ketmasligi kerak.
  */
 export function photoPath(o: {
-  group: string;
   baseName: string;
   docNumber: string;
   mime: string;
   taken?: Set<string>;
 }): string {
-  const folder = groupFolder(o.group);
   const ext = extensionFor(o.mime);
-  const candidate = `${folder}/${o.baseName}.${ext}`;
+  const candidate = `${o.baseName}.${ext}`;
 
   if (!o.taken || !o.taken.has(candidate)) return candidate;
-  return `${folder}/${o.baseName}_${o.docNumber}.${ext}`;
+  return `${o.baseName}_${o.docNumber}.${ext}`;
 }

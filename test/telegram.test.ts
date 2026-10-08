@@ -206,3 +206,30 @@ test("editMessage xatoni yutadi — progress ko'rsatgichi ishni to'xtatmaydi", a
   // Xato tashlanmasligi kerak
   await tg.editMessage(1, 2, "matn");
 });
+
+// --- Bot tavsifi (birinchi kirish) ---
+
+test("tavsif Telegram chegaralariga sig'adi", async () => {
+  const { t } = await import("../src/text.ts");
+  assert.ok(
+    t.botDescription.length <= 512,
+    `tavsif ${t.botDescription.length} belgi — chegara 512`,
+  );
+  assert.ok(
+    t.botShortDescription.length <= 120,
+    `qisqa tavsif ${t.botShortDescription.length} belgi — chegara 120`,
+  );
+});
+
+test("tavsif o'rnatilmasa ham bot ishga tushadi", async () => {
+  // Eski bot API yoki tarmoq xatosi botni to'xtatmasligi kerak
+  mockFetch(
+    () =>
+      new Response(
+        JSON.stringify({ ok: false, error_code: 400, description: "nope" }),
+        { status: 400 },
+      ),
+  );
+  const tg = new Telegram("token");
+  await tg.setDescriptions("tavsif", "qisqa");
+});

@@ -16,6 +16,7 @@ import { Batcher } from "./batch.ts";
 import { Invites } from "./invites.ts";
 import { deletePhotos } from "./photos.ts";
 import { Throttle } from "./throttle.ts";
+import { t } from "./text.ts";
 import { handleUpdate, processBatch, COMMANDS, type Deps } from "./bot.ts";
 
 const CODE_TTL_MINUTES = 60;
@@ -208,7 +209,10 @@ async function main() {
     process.exit(1);
   }
 
+  // Menyudagi buyruqlar va bo'sh suhbatdagi tavsif — xodim botni
+  // birinchi ochganda START tugmasi bilan birga shular ko'rinadi
   await tg.setMyCommands(COMMANDS);
+  await tg.setDescriptions(t.botDescription, t.botShortDescription);
 
   console.log(`Bot ishga tushdi: @${me.username}`);
   const provider = providerInfo();

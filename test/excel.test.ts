@@ -61,12 +61,10 @@ test("passportState Umra talabini qo'llaydi", () => {
   assert.equal(passportState("", REF, 6), "unknown");
 });
 
-test("workbookName sana va guruhni oladi", () => {
-  assert.equal(workbookName(REF), "umra-hujjatlar-2026-09-29.xlsx");
-  assert.match(workbookName(REF, "Umra mart"), /^umra-hujjatlar-umra-mart-2026-09-29\.xlsx$/);
-  // Xavfli belgilar fayl nomiga tushmaydi
-  const name = workbookName(REF, "a/b\\c:*?\"<>|");
-  assert.ok(!/[\/\\:*?"<>|]/.test(name), `fayl nomida xavfli belgi: ${name}`);
+test("workbookName sanani oladi", () => {
+  assert.equal(workbookName(REF), "umra-pasportlar-2026-09-29.xlsx");
+  // Fayl nomi butunlay o'zimizdan — xavfli belgi tushishi mumkin emas
+  assert.ok(!/[\/\\:*?"<>|]/.test(workbookName(REF)));
 });
 
 test("workbookCaption muammolarni sanaydi", () => {

@@ -20,7 +20,6 @@ type Cell = XlsxCell;
 
 const COLUMNS: { header: string; width: number }[] = [
   { header: "№", width: 5 },
-  { header: "Guruh", width: 14 },
   { header: "Familiya", width: 22 },
   { header: "Ism", width: 24 },
   { header: "Hujjat turi", width: 20 },
@@ -121,7 +120,6 @@ export async function buildWorkbook(
 
     return [
       paint({ value: i + 1, type: Number, align: "center" }),
-      paint(text(p.group_label)),
       paint(text(p.surname)),
       paint(text(p.given_names)),
       paint(text(p.doc_label)),
@@ -175,18 +173,9 @@ export async function buildWorkbook(
   return new Uint8Array(buffer) as Uint8Array<ArrayBuffer>;
 }
 
-/** Fayl nomi: `umra-hujjatlar-2026-09-29.xlsx` */
-export function workbookName(today = new Date(), group?: string): string {
-  const day = today.toISOString().slice(0, 10);
-  const slug = group
-    ? "-" +
-      group
-        .toLowerCase()
-        .replace(/[^a-z0-9а-яёʻʼ-]+/gi, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 30)
-    : "";
-  return `umra-hujjatlar${slug}-${day}.xlsx`;
+/** Fayl nomi: `umra-pasportlar-2026-09-29.xlsx` */
+export function workbookName(today = new Date()): string {
+  return `umra-pasportlar-${today.toISOString().slice(0, 10)}.xlsx`;
 }
 
 /** Xodimga yuboriladigan izoh: nechta kishi, nechtasida muammo bor. */

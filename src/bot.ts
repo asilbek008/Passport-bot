@@ -20,16 +20,15 @@ import { parseVisaType, type VisaType } from "./visa.ts";
 import { withRetry } from "./throttle.ts";
 import { pickPhoto, documentFits } from "./image-pick.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
+import { cropToDocument, type Box } from "./crop.ts";
 import {
   savePhoto,
   deletePhoto,
   deletePhotos,
   readPhoto,
   photoPath,
-  groupFolder,
-  removeGroupFolder,
 } from "./photos.ts";
-import type { Store } from "./store.ts";
+import type { Store, Pilgrim } from "./store.ts";
 import type { Telegram, TgUpdate } from "./telegram.ts";
 import type { readDocument } from "./vision.ts";
 
@@ -61,13 +60,25 @@ function allowed(chatId: number, store: Store): boolean {
   return isOperator(chatId) || store.isOperator(chatId);
 }
 
+/**
+ * Telegram menyusidagi buyruqlar (`setMyCommands`).
+ *
+ * `/start` BIRINCHI turadi: xodim botni birinchi marta ochganda Telegram
+ * aynan shu buyruqni katta "START" tugmasi qilib ko'rsatadi, menyuda ham
+ * eng yuqorida bo'ladi. Ro'yxat qisqa — har kuni kerak bo'ladiganlar;
+ * qolganlari /yordam ichida.
+ */
 export const COMMANDS = [
-  { command: "guruh", description: "Joriy safar guruhini belgilash" },
-  { command: "royxat", description: "Guruhdagi kishilar" },
-  { command: "excel", description: "Excel jadvalni olish" },
+  { command: "start", description: "Boshlash va qisqa yo'riqnoma" },
+  { command: "royxat", description: "O'qilgan pasportlar ro'yxati" },
+  { command: "excel", description: "Hammasini Excel jadval qilib olish" },
+  { command: "zip", description: "Hammasini rasmlar bilan arxiv qilib olish" },
   { command: "ogohlik", description: "Pasporti tez tugaydiganlar" },
   { command: "yordam", description: "Buyruqlar ro'yxati" },
 ];
+
+/** Arxiv ichidagi papka nomi — xodim zip'ni ochganda shu ko'rinadi. */
+const ARCHIVE_FOLDER = "umra-pasportlar";
 
 /** Telegram xabar chegarasini hisobga olib yuboradi. */
 async function reply(tg: Telegram, chatId: number, text: string): Promise<void> {
@@ -172,11 +183,10 @@ async function handleCommand(
 ): Promise<void> {
   const { tg, store } = deps;
   const now = deps.now?.() ?? new Date();
-  const group = store.currentGroup(chatId);
 
   switch (command) {
     case "start":
-      await reply(tg, chatId, t.start(group));
+      await reply(tg, chatId, t.start(store.count()));
       return;
 
     case "yordam":
@@ -184,31 +194,10 @@ async function handleCommand(
       await reply(tg, chatId, t.help);
       return;
 
-    case "guruh": {
-      if (!argument) {
-        await tg.sendMessage(chatId, t.groupCurrent(group, store.count(group)));
-        return;
-      }
-      // "-" yoki "yoq" — guruhni olib tashlash
-      if (argument === "-" || argument.toLowerCase() === "yoq") {
-        store.setCurrentGroup(chatId, "");
-        await tg.sendMessage(chatId, t.groupCleared);
-        return;
-      }
-      const label = argument.slice(0, 60);
-      store.setCurrentGroup(chatId, label);
-      await tg.sendMessage(chatId, t.groupSet(label));
-      return;
-    }
-
-    case "guruhlar":
-      await reply(tg, chatId, t.groupList(store.groups()));
-      return;
-
     case "royxat": {
-      const rows = store.all(group || undefined);
+      const rows = store.all();
       if (rows.length === 0) {
-        await tg.sendMessage(chatId, t.emptyList(group));
+        await tg.sendMessage(chatId, t.emptyList());
         return;
       }
       const lines = rows.map(
@@ -216,32 +205,23 @@ async function handleCommand(
           `${i + 1}. ${esc(p.surname)} ${esc(p.given_names)} — \`${p.doc_number}\`` +
           ` · ${p.expiry_date}`,
       );
-      await reply(tg, chatId, t.listHeader(group, rows.length) + lines.join("\n"));
+      await reply(tg, chatId, t.listHeader(rows.length) + lines.join("\n"));
       return;
     }
 
     case "excel": {
-      const wantAll = /^(hammasi|all|barcha)$/i.test(argument);
-      const scope = wantAll ? undefined : group || undefined;
-      const rows = store.all(scope);
+      const rows = store.all();
       if (rows.length === 0) {
-        await tg.sendMessage(chatId, t.emptyList(wantAll ? "" : group));
+        await tg.sendMessage(chatId, t.emptyList());
         return;
       }
-      const bytes = await buildWorkbook(rows, now);
-      await tg.sendDocument(
-        chatId,
-        workbookName(now, wantAll ? undefined : group || undefined),
-        bytes,
-        workbookCaption(rows, now),
-      );
-      store.logExport(chatId, rows.length);
+      await sendWorkbook(chatId, rows, deps, now);
       return;
     }
 
     case "ogohlik": {
       const risky = store
-        .all(group || undefined)
+        .all()
         .map((p) => ({ p, state: passportState(p.expiry_date, now) }))
         .filter(({ state }) => state !== "ok");
       if (risky.length === 0) {
@@ -313,8 +293,8 @@ async function handleCommand(
     }
 
     case "vizasiz": {
-      const missing = store.withoutVisa(group || undefined);
-      const total = store.count(group || undefined);
+      const missing = store.withoutVisa();
+      const total = store.count();
       if (missing.length === 0) {
         await tg.sendMessage(chatId, t.allHaveVisa(total));
         return;
@@ -331,9 +311,9 @@ async function handleCommand(
     }
 
     case "vizalar": {
-      const rows = store.all(group || undefined);
+      const rows = store.all();
       if (rows.length === 0) {
-        await tg.sendMessage(chatId, t.emptyList(group));
+        await tg.sendMessage(chatId, t.emptyList());
         return;
       }
       await reply(tg, chatId, t.visaList(rows, now));
@@ -341,58 +321,12 @@ async function handleCommand(
     }
 
     case "zip": {
-      const wantAll = /^(hammasi|all|barcha)$/i.test(argument);
-      const scope = wantAll ? undefined : group || undefined;
-      const rows = store.all(scope);
+      const rows = store.all();
       if (rows.length === 0) {
-        await tg.sendMessage(chatId, t.emptyList(wantAll ? "" : group));
+        await tg.sendMessage(chatId, t.emptyList());
         return;
       }
-
-      const folder = wantAll ? "umra-hujjatlar" : groupFolder(group);
-      const entries: ZipEntry[] = [];
-      const missing: string[] = [];
-
-      for (const p of rows) {
-        const file = p.photo_file;
-        const bytes = file ? readPhoto(file) : null;
-        if (!file || !bytes) {
-          missing.push(`${esc(p.surname)} ${esc(p.given_names)}`);
-          continue;
-        }
-        // Arxiv ichida: <papka>/<FAMILIYA_ISM_turi>.jpg
-        const name = file.includes("/") ? file.slice(file.lastIndexOf("/") + 1) : file;
-        entries.push({
-          path: `${folder}/${wantAll ? `${groupFolder(p.group_label)}/` : ""}${name}`,
-          data: bytes,
-        });
-      }
-
-      // Excel ham arxivga qo'shiladi — bitta faylda hammasi
-      entries.push({
-        path: `${folder}/${workbookName(now, wantAll ? undefined : group || undefined)}`,
-        data: await buildWorkbook(rows, now),
-      });
-
-      const zip = makeZip(entries);
-      const sizeMb = zip.length / (1024 * 1024);
-      if (sizeMb > config.zipMaxMb) {
-        await reply(tg, chatId, t.zipTooBig(sizeMb, config.zipMaxMb));
-        return;
-      }
-
-      await tg.sendDocument(
-        chatId,
-        `${folder}-${now.toISOString().slice(0, 10)}.zip`,
-        zip,
-        t.zipCaption({
-          photos: entries.length - 1,
-          people: rows.length,
-          missing,
-          sizeMb,
-        }),
-      );
-      store.logExport(chatId, rows.length);
+      await sendArchive(chatId, rows, deps, now);
       return;
     }
 
@@ -409,18 +343,6 @@ async function handleCommand(
         chatId,
         removed.count > 0 ? t.deleted(doc) : t.notFound(doc),
       );
-      return;
-    }
-
-    case "guruhni_ochir": {
-      if (!argument) {
-        await tg.sendMessage(chatId, t.needGroupName);
-        return;
-      }
-      const removed = store.deleteGroup(argument);
-      deletePhotos(removed.photos);
-      removeGroupFolder(argument);
-      await tg.sendMessage(chatId, t.groupDeleted(argument, removed.count));
       return;
     }
 
@@ -474,6 +396,87 @@ async function handleCommand(
   }
 }
 
+// --- Fayl yuborish ---
+//
+// Ikki joydan chaqiriladi: xodim `/excel` yoki `/zip` yozganda, va rasmlar
+// o'qib bo'lingach AVTOMATIK. Egasining talabi: "/start va senga rasmlar
+// yuboradi, sen ularni xlsx qilib va .zip papka qilib tashlab berasan" —
+// ya'ni fayl so'ralmasdan keladi.
+
+/** Excel jadvalni yuboradi. */
+async function sendWorkbook(
+  chatId: number,
+  rows: Pilgrim[],
+  deps: Deps,
+  now: Date,
+): Promise<void> {
+  const bytes = await buildWorkbook(rows, now);
+  await deps.tg.sendDocument(
+    chatId,
+    workbookName(now),
+    bytes,
+    workbookCaption(rows, now),
+  );
+  deps.store.logExport(chatId, rows.length);
+}
+
+/**
+ * Rasmlar + Excel'ni bitta arxiv qilib yuboradi.
+ *
+ * Arxiv ichida bitta papka bo'ladi (`umra-pasportlar/`), har rasm
+ * `FAMILIYA_ISM_turi.jpg` nomi bilan — xodim zip'ni ochib, hujjatlarni
+ * qidirmasdan ko'radi.
+ */
+async function sendArchive(
+  chatId: number,
+  rows: Pilgrim[],
+  deps: Deps,
+  now: Date,
+): Promise<void> {
+  const { tg, store } = deps;
+  const entries: ZipEntry[] = [];
+  const missing: string[] = [];
+
+  for (const p of rows) {
+    const file = p.photo_file;
+    const bytes = file ? readPhoto(file) : null;
+    if (!file || !bytes) {
+      // Rasmi diskda yo'q (qo'lda o'chirilgan yoki saqlanmagan)
+      missing.push(`${esc(p.surname)} ${esc(p.given_names)}`);
+      continue;
+    }
+    // Eski yozuvlarda yo'lda guruh papkasi bo'lishi mumkin — faqat nomini olamiz
+    const name = file.includes("/") ? file.slice(file.lastIndexOf("/") + 1) : file;
+    entries.push({ path: `${ARCHIVE_FOLDER}/${name}`, data: bytes });
+  }
+
+  // Excel ham arxivga kiradi — bitta faylda hammasi
+  entries.push({
+    path: `${ARCHIVE_FOLDER}/${workbookName(now)}`,
+    data: await buildWorkbook(rows, now),
+  });
+
+  const zip = makeZip(entries);
+  const sizeMb = zip.length / (1024 * 1024);
+  if (sizeMb > config.zipMaxMb) {
+    await reply(tg, chatId, t.zipTooBig(sizeMb, config.zipMaxMb));
+    return;
+  }
+
+  await tg.sendDocument(
+    chatId,
+    `${ARCHIVE_FOLDER}-${now.toISOString().slice(0, 10)}.zip`,
+    zip,
+    t.zipCaption({
+      photos: entries.length - 1,
+      people: rows.length,
+      missing,
+      sizeMb,
+    }),
+  );
+  store.logExport(chatId, rows.length);
+}
+
 // --- Rasmlarni to'plam bo'lib o'qish ---
 
 /**
@@ -489,7 +492,6 @@ export async function processBatch(
 ): Promise<void> {
   const { tg, store, read } = deps;
   const now = deps.now?.() ?? new Date();
-  const group = store.currentGroup(chatId);
 
   if (!store.countAttempt(chatId, fileIds.length)) {
     await tg.sendMessage(chatId, t.dailyLimit);
@@ -501,12 +503,19 @@ export async function processBatch(
   const ok: string[] = [];
   const failed: string[] = [];
   const warnings: string[] = [];
-  /** Shu guruhda allaqachon egallangan rasm yo'llari (nom to'qnashuvi uchun) */
-  const takenPaths = new Set(store.photoPaths(group || undefined));
+  /** Allaqachon egallangan rasm nomlari (bir xil ismlilar uchun) */
+  const takenPaths = new Set(store.photoPaths());
   let photoProblems = 0;
+  /** Nechta rasm hujjatning o'ziga qirqildi */
+  let croppedCount = 0;
   /** Viza yorliqlari — pasportlardan alohida hisobot beriladi */
   const visaOk: string[] = [];
   const visaProblems: string[] = [];
+  /**
+   * Shu to'plamda saqlangan pasportlar. Oxirida aynan shularning
+   * Excel'i va arxivi yuboriladi — butun baza emas, hozir yuborilganlar.
+   */
+  const savedDocs: string[] = [];
 
   for (let i = 0; i < fileIds.length; i++) {
     // Progressni har 3 rasmda yangilaymiz — har birida yangilash
@@ -598,10 +607,17 @@ export async function processBatch(
       continue;
     }
 
+    // Rasm hujjatning o'ziga qirqiladi: kadrdagi stol, qo'l va boshqa
+    // qog'ozlar olib tashlanadi — viza arizasiga pasportning o'zi ilova
+    // qilinadi. Chegara ishonchsiz bo'lsa qirqilmaydi (`crop.ts`).
+    const shot = config.crop
+      ? cropToDocument(image, outcome.box, config.cropMarginPct)
+      : { bytes: image.bytes, cropped: false };
+    if (shot.cropped) croppedCount++;
+
     // Rasm fayli odam o'qiydigan nom bilan saqlanadi.
     // Bir xil ismli ikki kishi bo'lsa, ikkinchisiga pasport raqami qo'shiladi.
     const relative = photoPath({
-      group,
       baseName: photoBaseName({ ...mrz, type }),
       docNumber: mrz.documentNumber,
       mime: image.mime,
@@ -610,7 +626,7 @@ export async function processBatch(
 
     let saved: string | null = relative;
     try {
-      savePhoto(relative, image.bytes);
+      savePhoto(relative, shot.bytes);
       takenPaths.add(relative);
     } catch (err) {
       // Rasm saqlanmasa ham MA'LUMOT saqlanadi — xodim qo'lda qo'shadi
@@ -623,7 +639,8 @@ export async function processBatch(
 
     const result = store.save({
       added_by: chatId,
-      group_label: group,
+      // Guruh tushunchasi olib tashlandi — ustun bazada qoldi (eski yozuvlar)
+      group_label: "",
       surname: mrz.surname,
       given_names: mrz.givenNames,
       doc_code: mrz.documentCode,
@@ -643,8 +660,9 @@ export async function processBatch(
       photo_file: saved,
     });
 
-    // Ism yoki guruh o'zgargan bo'lsa eski rasm yetim qolmasin
+    // Ism o'zgargan bo'lsa eski rasm yetim qolmasin
     deletePhoto(result.previousPhoto);
+    savedDocs.push(mrz.documentNumber);
 
     ok.push(
       t.okLine({
@@ -675,14 +693,19 @@ export async function processBatch(
     }
   }
 
+  // Shu to'plamda saqlangan pasportlar — fayllar aynan shular bo'yicha
+  const batchRows = store.byDocNumbers(savedDocs);
+
   const report = t.batchReport({
     ok,
     failed,
     warnings,
     visaOk,
     visaProblems,
-    group,
     total: fileIds.length,
+    files: batchRows.length > 0,
+    cropped: croppedCount,
+    photoProblems,
   });
 
   const parts = splitMessage(report);
@@ -690,6 +713,19 @@ export async function processBatch(
   await tg.editMessage(chatId, progress.message_id, parts[0]);
   for (const part of parts.slice(1)) {
     await tg.sendMessage(chatId, part);
+  }
+
+  // Hisobotdan keyin fayllar — so'ralmasdan. Xodimning ishi shu bilan tugaydi.
+  if (batchRows.length === 0) return;
+  try {
+    await sendWorkbook(chatId, batchRows, deps, now);
+    await sendArchive(chatId, batchRows, deps, now);
+  } catch (err) {
+    // Ma'lumot saqlangan, faqat fayl ketmadi — qo'lda olish mumkin
+    console.error(
+      `[fayl] yuborilmadi: ${err instanceof Error ? err.message : "noma'lum"}`,
+    );
+    await tg.sendMessage(chatId, t.filesFailed);
   }
 }
 
@@ -706,6 +742,8 @@ type Outcome =
       };
       /** Rasmning o'zi — diskka saqlash uchun kerak */
       image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
+      /** Hujjatning kadrdagi chegarasi — qirqish uchun; yo'q bo'lsa null */
+      box: Box | null;
     }
   | { kind: "failed"; why: string }
   /** API'ning o'zi ishlamadi — qolgan rasmlarni o'qishdan ma'no yo'q */
@@ -741,6 +779,7 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
           visaType: result.visaType,
         },
         image,
+        box: result.box,
       };
     }
 

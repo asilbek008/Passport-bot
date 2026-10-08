@@ -73,37 +73,63 @@ export const t = {
   cannotRemoveSelf: "O'zingizni ruxsatdan chiqara olmaysiz.",
   needChatId: "Chat raqamini yozing: `/xodim_ochir 123456789`",
 
-  start: (group: string) =>
+  /**
+   * Bot tavsifi — bo'sh suhbatda, START tugmasi ustida ko'rinadi.
+   * Telegram chegarasi: 512 belgi.
+   */
+  botDescription: [
+    "Umra safari uchun pasport ma'lumotlarini tayyorlovchi ichki bot.",
+    "",
+    "Pasport rasmlarini yuboring — ism-familiya va pasport ma'lumotlari",
+    "o'qiladi, sizga Excel jadval va rasmlar arxivi qaytariladi.",
+    "",
+    "Bot faqat tashkilot xodimlari uchun ishlaydi.",
+  ].join("\n"),
+
+  /** Bot profilidagi qisqa tavsif. Telegram chegarasi: 120 belgi. */
+  botShortDescription:
+    "Pasport rasmlaridan Excel jadval va rasmlar arxivini tayyorlaydi. Faqat tashkilot xodimlari uchun.",
+
+  /**
+   * `/start` — xodim botni birinchi ochganda ko'radigan matn.
+   *
+   * Qisqa bo'lishi SHART: butun ish bitta qadam — rasm yuborish. Avval
+   * bu yerda `/guruh` bilan boshlanadigan uch qadamli yo'riqnoma turardi;
+   * egasining talabi bilan guruh tushunchasi butunlay olib tashlandi.
+   */
+  start: (saved: number) =>
     [
-      "Assalomu alaykum. Bu bot pasport rasmlaridan viza uchun kerakli",
-      "ma'lumotni o'qib, Excel jadval qilib beradi.",
+      "Assalomu alaykum. Pasport rasmlarini shu yerga yuboring.",
       "",
-      "*Qanday ishlatiladi:*",
-      "1. `/guruh Umra mart` — qaysi safar guruhi bilan ishlayotganingizni belgilaysiz",
-      "2. Pasport rasmlarini yuborasiz — bittalab yoki bir necha o'nlab, albom qilib",
-      "3. `/excel` — tayyor jadvalni olasiz",
+      "Men har biridan ism-familiya va pasport ma'lumotini o'qib,",
+      "sizga ikkita fayl qaytaraman:",
       "",
-      group
-        ? `Joriy guruh: *${esc(group)}*`
-        : "_Guruh belgilanmagan — rasmlar guruhsiz saqlanadi._",
+      "📊 *Excel jadval* — ism, familiya va pasport ma'lumotlari",
+      "🗂 *Arxiv (.zip)* — har pasportning rasmi, hujjatning o'ziga",
+      "qirqilgan, `FAMILIYA_ISM_turi.jpg` nomi bilan",
       "",
-      "Buyruqlar ro'yxati: /yordam",
+      "Rasmlarni bittalab ham, bir necha o'nlabini birga (albom qilib)",
+      "ham yuborishingiz mumkin. Hammasi o'qilgach fayllar o'zi keladi —",
+      "boshqa hech narsa qilish kerak emas.",
       "",
-      "*Eslatma:* bu mijozlarning shaxsiy hujjatlari. Rasmlar saqlanmaydi,",
-      "lekin o'qilgan ma'lumot bazada turadi — faqat ish uchun ishlatilsin.",
-    ].join("\n"),
+      saved > 0 ? `_Bazada ${saved} ta pasport bor._\n` : "",
+      "Buyruqlar: /yordam",
+      "",
+      "*Eslatma:* bu mijozlarning shaxsiy hujjatlari — rasmlar ham,",
+      "o'qilgan ma'lumot ham faqat ish uchun ishlatilsin.",
+    ]
+      .join("\n")
+      // Bazada yozuv bo'lmaganda qolgan bo'sh qatorni yig'ib tashlaymiz
+      .replace(/\n{3,}/g, "\n\n"),
 
   help: [
-    "*Buyruqlar:*",
+    "*Asosiy ish:* pasport rasmlarini yuborasiz — Excel jadval va .zip",
+    "arxiv o'zi keladi. Buyruq kerak emas.",
     "",
-    "`/guruh <nom>` — joriy safar guruhini belgilash",
-    "`/guruh` — joriy guruhni ko'rish",
-    "`/guruhlar` — hamma guruh va kishilar soni",
-    "`/royxat` — joriy guruhdagi kishilar",
-    "`/excel` — joriy guruhni Excel qilib olish",
-    "`/excel hammasi` — barcha guruhlarni bitta faylda",
-    "`/zip` — rasmlar + Excel bitta arxivda",
-    "`/zip hammasi` — barcha guruhlar arxivda",
+    "*Fayllarni qayta olish:*",
+    "`/royxat` — o'qilgan pasportlar ro'yxati",
+    "`/excel` — hammasini bitta Excel jadval qilib olish",
+    "`/zip` — hammasini rasmlar bilan arxiv qilib olish",
     "",
     "*Viza:*",
     "`/viza <pasport> <turi>` — viza belgilash (yoki viza rasmini yuboring)",
@@ -111,37 +137,16 @@ export const t = {
     "`/vizasiz` — vizasi yo'qlar",
     "`/vizani_ochir <pasport>` — viza ma'lumotini olib tashlash",
     "`/ogohlik` — pasporti tez tugaydiganlar",
-    "`/ochir <pasport raqami>` — bitta yozuvni o'chirish",
-    "`/guruhni_ochir <nom>` — butun guruhni o'chirish",
+    "",
+    "*Tozalash:*",
+    "`/ochir <pasport raqami>` — bitta yozuvni va rasmini o'chirish",
     "`/tozalash` — saqlash muddati o'tgan yozuvlarni o'chirish",
     "",
     "*Xodimlar:*",
     "`/kod` — yangi xodim uchun bir martalik kod",
     "`/xodimlar` — ruxsat berilganlar ro'yxati",
     "`/xodim_ochir <raqam>` — ruxsatni olib tashlash",
-    "",
-    "Pasport rasmini yuborsangiz — o'qiladi va joriy guruhga qo'shiladi.",
   ].join("\n"),
-
-  // --- Guruh ---
-
-  groupSet: (label: string) =>
-    `Joriy guruh: *${esc(label)}*\n\nEndi yuborilgan rasmlar shu guruhga qo'shiladi.`,
-
-  groupCleared: "Guruh olib tashlandi — rasmlar guruhsiz saqlanadi.",
-
-  groupCurrent: (label: string, count: number) =>
-    label
-      ? `Joriy guruh: *${esc(label)}* (${count} kishi)\n\nO'zgartirish: \`/guruh <yangi nom>\``
-      : "Guruh belgilanmagan.\n\nBelgilash: `/guruh Umra mart`",
-
-  groupList: (groups: { label: string; count: number }[]) =>
-    groups.length === 0
-      ? "Hozircha bitta ham yozuv yo'q."
-      : "*Guruhlar:*\n\n" +
-        groups
-          .map((g) => `• ${esc(g.label || "(guruhsiz)")} — ${g.count} kishi`)
-          .join("\n"),
 
   // --- Rasm qabul qilish ---
 
@@ -320,7 +325,7 @@ export const t = {
       `Arxiv juda katta: ${sizeMb.toFixed(1)} MB (chegara ${maxMb} MB).`,
       "",
       "Telegram bot bundan kattasini yubora olmaydi. Yechimlari:",
-      "• guruhlarga bo'lib oling — `/zip` joriy guruhni beradi",
+      "• `/tozalash` yoki `/ochir` bilan keraksiz yozuvlarni olib tashlang",
       "• `.env` dagi `ZIP_MAX_MB` ni oshiring (Telegram chegarasi 50 MB)",
       "",
       `Rasm fayllari papkada ham turadi: \`${config.photosDir}\``,
@@ -336,18 +341,20 @@ export const t = {
     warnings: string[];
     visaOk?: string[];
     visaProblems?: string[];
-    group: string;
     total: number;
+    /** Hisobotdan keyin Excel va arxiv yuboriladimi */
+    files?: boolean;
+    /** Nechta rasm hujjatning o'ziga qirqildi */
+    cropped?: number;
+    /** Nechta rasm diskka saqlanmadi */
+    photoProblems?: number;
   }) => {
     const out: string[] = [];
     const visaOk = parts.visaOk ?? [];
     const visaProblems = parts.visaProblems ?? [];
     const read = parts.ok.length + visaOk.length;
 
-    out.push(
-      `*Natija:* ${read} / ${parts.total} o'qildi` +
-        (parts.group ? ` · guruh: *${esc(parts.group)}*` : ""),
-    );
+    out.push(`*Natija:* ${read} / ${parts.total} o'qildi`);
 
     if (parts.ok.length > 0) {
       out.push("", ...parts.ok);
@@ -373,8 +380,26 @@ export const t = {
       );
     }
 
-    out.push("", "Jadvalni olish: /excel");
-    return out.join("\n");
+    // Rasm saqlanmasa, arxivda ham bo'lmaydi — xodim buni bilishi kerak
+    if (parts.photoProblems && parts.photoProblems > 0) {
+      out.push(
+        "",
+        `⚠️ ${parts.photoProblems} ta rasm diskka saqlanmadi — ma'lumoti bor, rasmi yo'q.`,
+      );
+    }
+
+    if (parts.files) {
+      const cropped = parts.cropped ?? 0;
+      out.push(
+        "",
+        "📊 Excel jadval va 🗂 arxiv yuborilmoqda...",
+        cropped > 0
+          ? `_${cropped} ta rasm hujjatning o'ziga qirqildi._`
+          : "",
+      );
+    }
+
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
   },
 
   /** Sabablar — qisqa, chunki to'plam hisobotida bitta qatorga sig'ishi kerak. */
@@ -419,13 +444,10 @@ export const t = {
 
   // --- Ro'yxat va eksport ---
 
-  emptyList: (group: string) =>
-    group
-      ? `*${esc(group)}* guruhida hozircha yozuv yo'q.`
-      : "Hozircha bitta ham hujjat qabul qilinmagan.",
+  emptyList: () =>
+    "Hozircha bitta ham hujjat qabul qilinmagan.\n\nPasport rasmini yuboring — o'qib, Excel va arxiv qilib beraman.",
 
-  listHeader: (group: string, n: number) =>
-    `*${esc(group || "Guruhsiz")}* — ${n} kishi\n`,
+  listHeader: (n: number) => `*O'qilgan pasportlar — ${n} kishi*\n`,
 
   listTruncated: (shown: number, total: number) =>
     `\n_...va yana ${total - shown} kishi. To'liq ro'yxat Excelda._`,
@@ -437,9 +459,16 @@ export const t = {
   deleted: (docNumber: string) => `\`${docNumber}\` o'chirildi.`,
   notFound: (docNumber: string) => `\`${docNumber}\` topilmadi.`,
   needDocNumber: "Pasport raqamini yozing: `/ochir AB1234567`",
-  needGroupName: "Guruh nomini yozing: `/guruhni_ochir Umra mart`",
-  groupDeleted: (label: string, n: number) =>
-    `*${esc(label)}* guruhi o'chirildi (${n} yozuv).`,
+
+  /**
+   * Ma'lumot saqlandi, lekin fayl ketmadi (Telegram xatosi).
+   * Xodim ishini yo'qotmasligi uchun qo'lda olish yo'li aytiladi.
+   */
+  filesFailed: [
+    "⚠️ Ma'lumot saqlandi, lekin faylni yuborib bo'lmadi.",
+    "",
+    "Qayta urinib ko'ring: /excel va /zip",
+  ].join("\n"),
 
   purged: (n: number) =>
     n === 0

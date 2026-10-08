@@ -13,7 +13,13 @@ process.env.MIN_PASSPORT_MONTHS = "6";
 process.env.DAILY_LIMIT = "10";
 
 // Rasmlar vaqtinchalik papkaga yozilsin — loyiha papkasi toza qolsin
-import { mkdtempSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  existsSync,
+  readdirSync,
+  writeFileSync,
+  readFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -91,6 +97,8 @@ function okResult(mrzText: string): ReadResult {
     placeOfBirth: "QIZIRIQ",
     authority: "IIB",
     visaType: null,
+    // Chegara yo'q — rasm qirqilmaydi (qirqish alohida testda)
+    box: null,
   };
 }
 
@@ -104,7 +112,11 @@ type Sent = { chatId: number; text: string };
  */
 type Reply = ReadResult | "throw";
 
-function makeDeps(reads: Record<string, Reply | Reply[]>) {
+function makeDeps(
+  reads: Record<string, Reply | Reply[]>,
+  /** Telegram qaytaradigan rasm baytlari — qirqishni sinash uchun */
+  imageBytes?: Uint8Array,
+) {
   const sent: Sent[] = [];
   const edits: Sent[] = [];
   const documents: {
@@ -156,7 +168,7 @@ function makeDeps(reads: Record<string, Reply | Reply[]>) {
     id: string,
   ) => {
     currentFile = id;
-    return { bytes: new Uint8Array(8), mime: "image/jpeg" };
+    return { bytes: imageBytes ?? new Uint8Array(8), mime: "image/jpeg" };
   };
   /** Har rasm bo'yicha nechta so'rov ketdi — qayta urinishni sanash uchun */
   const calls: Record<string, number> = {};
@@ -238,21 +250,18 @@ test("xodimning rasmi navbatga tushadi — eng katta o'lcham", async () => {
 
 // --- Guruh ---
 
-test("/guruh joriy guruhni belgilaydi va yozuvga tushadi", async () => {
+test("yuborilgan pasport bazaga tushadi", async () => {
   const mrz = td3({
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
     birth: "850412", sex: "M", expiry: "300101",
   });
-  const { deps, sent, store } = makeDeps({ f1: okResult(mrz) });
-
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
-  assert.match(sent.at(-1)!.text, /Umra mart/);
+  const { deps, store } = makeDeps({ f1: okResult(mrz) });
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
   const rows = store.all();
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].group_label, "Umra mart");
+  assert.equal(rows[0].group_label, "", "guruh tushunchasi olib tashlandi");
   assert.equal(rows[0].added_by, OPERATOR);
   assert.equal(rows[0].surname, "KARIMOV");
   assert.equal(rows[0].doc_number, "AB1234567");
@@ -383,25 +392,28 @@ test("kunlik cheklovdan oshsa o'qilmaydi", async () => {
 
 // --- Excel ---
 
-test("/excel faylni yuboradi va jurnalga yozadi", async () => {
+test("/excel hammasini qayta jadval qilib beradi", async () => {
   const mrz = td3({
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
     birth: "850412", sex: "M", expiry: "300101",
   });
   const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
   await processBatch(OPERATOR, ["f1"], deps as never);
+  // To'plamdan keyin Excel va arxiv AVTOMATIK ketadi
+  assert.equal(documents.length, 2, "jadval va arxiv o'zi yuborilishi kerak");
+
   await handleUpdate(textUpdate(OPERATOR, "/excel"), deps as never);
 
-  assert.equal(documents.length, 1);
-  assert.match(documents[0].name, /umra-hujjatlar-umra-mart-2026-09-29\.xlsx/);
-  assert.match(documents[0].caption, /\*1\* kishi/);
-  assert.ok(documents[0].size > 2000, "haqiqiy xlsx bo'lishi kerak");
+  assert.equal(documents.length, 3);
+  const excel = documents.at(-1)!;
+  assert.equal(excel.name, "umra-pasportlar-2026-09-29.xlsx");
+  assert.match(excel.caption, /\*1\* kishi/);
+  assert.ok(excel.size > 2000, "haqiqiy xlsx bo'lishi kerak");
   store.close();
 });
 
-test("bo'sh guruhda /excel fayl yubormaydi", async () => {
+test("yozuv bo'lmasa /excel fayl yubormaydi", async () => {
   const { deps, documents, sent, store } = makeDeps({});
   await handleUpdate(textUpdate(OPERATOR, "/excel"), deps as never);
   assert.equal(documents.length, 0);
@@ -426,8 +438,8 @@ test("to'g'ri kod bilan begona odam xodimga aylanadi", async () => {
   assert.equal(store.isOperator(STRANGER), true);
 
   // Endi buyruq ishlaydi
-  await handleUpdate(textUpdate(STRANGER, "/guruh Sinov"), deps as never);
-  assert.match(sent.at(-1)!.text, /Sinov/);
+  await handleUpdate(textUpdate(STRANGER, "/royxat"), deps as never);
+  assert.match(sent.at(-1)!.text, /qabul qilinmagan/);
   store.close();
 });
 
@@ -521,11 +533,10 @@ test("rasm familiya_ism_turi nomi bilan saqlanadi", async () => {
   });
   const { deps, store } = makeDeps({ f1: okResult(uzb) });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
   await processBatch(OPERATOR, ["f1"], deps as never);
 
   const row = store.all()[0];
-  assert.equal(row.photo_file, "umra-mart/KARIMOV_AZIZ_uzb-pasport.jpg");
+  assert.equal(row.photo_file, "KARIMOV_AZIZ_uzb-pasport.jpg");
   assert.ok(existsSync(join(PHOTOS, row.photo_file!)), "fayl diskda bo'lishi kerak");
 
   // Hujjat turi ham yozilgan
@@ -585,13 +596,13 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
   });
   const { deps, documents, store } = makeDeps({ f1: okResult(a), f2: okResult(b) });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
   await processBatch(OPERATOR, ["f1", "f2"], deps as never);
   await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
 
-  assert.equal(documents.length, 1, "arxiv yuborilishi kerak");
-  const doc = documents[0];
-  assert.match(doc.name, /^umra-mart-\d{4}-\d{2}-\d{2}\.zip$/);
+  // 1-2: to'plamdan keyin avtomatik, 3: qo'lda so'ralgan
+  assert.equal(documents.length, 3);
+  const doc = documents.at(-1)!;
+  assert.match(doc.name, /^umra-pasportlar-\d{4}-\d{2}-\d{2}\.zip$/);
   assert.match(doc.caption, /\*2\* rasm/);
   assert.match(doc.caption, /\*2\* kishi/);
 
@@ -602,11 +613,12 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
   execFileSync("unzip", ["-t", path], { stdio: "pipe" });
   execFileSync("unzip", ["-qq", "-o", path, "-d", join(dir, "out")], { stdio: "pipe" });
 
-  const inside = readdirSync(join(dir, "out", "umra-mart")).sort();
+  // Arxiv ichida BITTA papka: rasmlar va Excel shunda
+  const inside = readdirSync(join(dir, "out", "umra-pasportlar")).sort();
   assert.deepEqual(inside, [
     "KARIMOV_AZIZ_uzb-pasport.jpg",
     "SALIMOVA_NARGIZA_uzb-pasport.jpg",
-    "umra-hujjatlar-umra-mart-2026-09-29.xlsx",
+    "umra-pasportlar-2026-09-29.xlsx",
   ]);
   store.close();
 });
@@ -618,7 +630,6 @@ test("yozuv o'chirilsa rasmi ham o'chadi", async () => {
   });
   const { deps, store } = makeDeps({ f1: okResult(mrz) });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Sinov"), deps as never);
   await processBatch(OPERATOR, ["f1"], deps as never);
 
   const file = store.all()[0].photo_file!;
@@ -630,20 +641,19 @@ test("yozuv o'chirilsa rasmi ham o'chadi", async () => {
   store.close();
 });
 
-test("guruh o'chirilsa butun papka ketadi", async () => {
+test("rasm guruh papkasisiz, to'g'ri nom bilan saqlanadi", async () => {
   const mrz = td3({
     surname: "USMONOV", given: "JAHON", docNumber: "AB6666666",
     birth: "880101", sex: "M", expiry: "310101",
   });
   const { deps, store } = makeDeps({ f1: okResult(mrz) });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Ketadi"), deps as never);
   await processBatch(OPERATOR, ["f1"], deps as never);
-  assert.ok(existsSync(join(PHOTOS, "ketadi")));
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruhni_ochir Ketadi"), deps as never);
-  assert.equal(store.count(), 0);
-  assert.ok(!existsSync(join(PHOTOS, "ketadi")), "papka ham o'chishi kerak");
+  const file = store.all()[0].photo_file!;
+  assert.equal(file, "USMONOV_JAHON_uzb-pasport.jpg");
+  assert.ok(!file.includes("/"), "guruh papkasi bo'lmasligi kerak");
+  assert.ok(existsSync(join(PHOTOS, file)));
   store.close();
 });
 
@@ -659,7 +669,6 @@ test("bir xil ismli ikki kishining rasmi almashmaydi", async () => {
   });
   const { deps, store } = makeDeps({ f1: okResult(first), f2: okResult(second) });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Egizak"), deps as never);
   await processBatch(OPERATOR, ["f1"], deps as never);
   await processBatch(OPERATOR, ["f2"], deps as never);
 
@@ -669,12 +678,11 @@ test("bir xil ismli ikki kishining rasmi almashmaydi", async () => {
   store.close();
 });
 
-test("bo'sh guruhda /zip arxiv yubormaydi", async () => {
+test("yozuv bo'lmasa /zip arxiv yubormaydi", async () => {
   const { deps, documents, sent, store } = makeDeps({});
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Bosh"), deps as never);
   await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
   assert.equal(documents.length, 0);
-  assert.match(sent.at(-1)!.text, /yozuv yo'q/);
+  assert.match(sent.at(-1)!.text, /qabul qilinmagan/);
   store.close();
 });
 
@@ -754,7 +762,6 @@ test("viza rasmi egasiga o'zi bog'lanadi", async () => {
     f2: visaResult(visa, "umra"),
   });
 
-  await handleUpdate(textUpdate(OPERATOR, "/guruh Umra mart"), deps as never);
   await processBatch(OPERATOR, ["f1"], deps as never);
   await processBatch(OPERATOR, ["f2"], deps as never);
 
@@ -1016,5 +1023,172 @@ test("qayta urinishlar tugasa to'plam to'xtaydi, vaqtincha deb aytiladi", async 
   assert.deepEqual(slept, [2000, 4000], "kutish vaqti ikki barobar oshadi");
   assert.equal(store.count(), 0);
   assert.match(edits.at(-1)!.text, /bir-ikki daqiqadan keyin qayta yuboring/);
+  store.close();
+});
+
+// --- Yangi oqim: /start → rasm → fayllar ---
+//
+// Egasining talabi: "1-marta kirganda buyruqlar /start chiqish kerak,
+// /guruh kerak emas, /start va senga rasmlar yuboradi — sen ularni xlsx
+// va .zip qilib tashlab berasan".
+
+test("menyuda /start birinchi turadi, /guruh yo'q", async () => {
+  const { COMMANDS } = await import("../src/bot.ts");
+  const names = COMMANDS.map((c) => c.command);
+  assert.equal(names[0], "start", "Telegram birinchisini START tugmasi qiladi");
+  assert.ok(!names.includes("guruh"), "guruh buyrug'i olib tashlandi");
+  assert.ok(names.includes("excel") && names.includes("zip"));
+});
+
+test("/start qisqa yo'riqnoma beradi, guruh haqida gapirmaydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/start"), deps as never);
+
+  const text = sent.map((m) => m.text).join("\n");
+  assert.match(text, /rasmlarini shu yerga yuboring/);
+  assert.match(text, /Excel/);
+  assert.match(text, /zip|Arxiv/);
+  assert.ok(!/\/guruh/.test(text), `guruh haqida yozilib qolgan:\n${text}`);
+  store.close();
+});
+
+test("rasmlar o'qilgach Excel va arxiv SO'RALMASDAN yuboriladi", async () => {
+  const a = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const b = td3({
+    surname: "SALIMOVA", given: "NARGIZA", docNumber: "AB7654321",
+    birth: "900707", sex: "F", expiry: "320202",
+  });
+  const { deps, documents, edits, store } = makeDeps({
+    f1: okResult(a),
+    f2: okResult(b),
+  });
+
+  await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+
+  assert.equal(documents.length, 2, "ikkita fayl: jadval va arxiv");
+  const [excel, zip] = documents;
+  assert.match(excel.name, /\.xlsx$/);
+  assert.match(zip.name, /\.zip$/);
+  assert.match(excel.caption, /\*2\* kishi/);
+  assert.match(zip.caption, /\*2\* rasm/);
+  // Hisobotda ham fayllar haqida aytiladi
+  assert.match(edits.at(-1)!.text, /Excel/);
+  store.close();
+});
+
+test("faqat shu to'plamdagi pasportlar fayllarga tushadi", async () => {
+  const old = td3({
+    surname: "ESKIYEV", given: "OLD", docNumber: "AB1111111",
+    birth: "800101", sex: "M", expiry: "310101",
+  });
+  const fresh = td3({
+    surname: "YANGIYEV", given: "NEW", docNumber: "AB2222222",
+    birth: "850101", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, store } = makeDeps({
+    f1: okResult(old),
+    f2: okResult(fresh),
+  });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await processBatch(OPERATOR, ["f2"], deps as never);
+
+  // Ikkinchi to'plamning fayli faqat 1 kishi bo'lishi kerak
+  const secondExcel = documents[2];
+  assert.match(secondExcel.name, /\.xlsx$/);
+  assert.match(
+    secondExcel.caption,
+    /\*1\* kishi/,
+    "butun baza emas, hozir yuborilganlar",
+  );
+  // Lekin bazada ikkisi ham bor, /excel hammasini beradi
+  assert.equal(store.count(), 2);
+  await handleUpdate(textUpdate(OPERATOR, "/excel"), deps as never);
+  assert.match(documents.at(-1)!.caption, /\*2\* kishi/);
+  store.close();
+});
+
+test("hech narsa o'qilmasa fayl yuborilmaydi", async () => {
+  const { deps, documents, edits, store } = makeDeps({ f1: "throw" });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  assert.equal(documents.length, 0, "bo'sh jadval yuborishdan ma'no yo'q");
+  assert.match(edits.at(-1)!.text, /O'qilmadi/);
+  store.close();
+});
+
+test("saqlangan rasm hujjatning o'ziga qirqiladi", async () => {
+  const { encode, decode } = await import("jpeg-js");
+  const mrz = td3({
+    surname: "QIRQIMOV", given: "SANJAR", docNumber: "AB9999999",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+
+  // Hujjat kadrning o'rtasidagi 20%–80% qismida
+  const width = 1200;
+  const height = 900;
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const inside =
+        x > width * 0.2 && x < width * 0.8 && y > height * 0.2 && y < height * 0.8;
+      pixels[i] = inside ? 210 : 250;
+      pixels[i + 1] = inside ? 40 : 250;
+      pixels[i + 2] = inside ? 40 : 250;
+      pixels[i + 3] = 255;
+    }
+  }
+  const source = new Uint8Array(encode({ data: pixels, width, height }, 92).data);
+
+  const result = okResult(mrz);
+  assert.ok(result.ok);
+  // Model hujjat chegarasini aytadi: [y0, x0, y1, x1]
+  result.box = { x0: 200, y0: 200, x1: 800, y1: 800 };
+
+  const { deps, store } = makeDeps({ f1: result }, source);
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const file = store.all()[0].photo_file!;
+  const saved = readFileSync(join(PHOTOS, file));
+  const img = decode(new Uint8Array(saved), { useTArray: true });
+
+  assert.ok(
+    img.width < width && img.height < height,
+    `rasm qirqilmagan: ${img.width}x${img.height}`,
+  );
+  // 2% bo'sh joy bilan: 60% + 4% = 64%
+  assert.ok(
+    Math.abs(img.width - width * 0.64) < 20,
+    `kenglik kutilgandan farq qiladi: ${img.width}`,
+  );
+  store.close();
+});
+
+test("chegara ishonchsiz bo'lsa rasm asl holida saqlanadi", async () => {
+  const mrz = td3({
+    surname: "BUTUNOV", given: "AKMAL", docNumber: "AB8181818",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const result = okResult(mrz);
+  assert.ok(result.ok);
+  // Hujjatdagi surat o'lchamidagi chegara — qirqilmasligi kerak
+  result.box = { x0: 100, y0: 200, x1: 300, y1: 500 };
+
+  const source = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+  const { deps, store } = makeDeps({ f1: result }, source);
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const file = store.all()[0].photo_file!;
+  const saved = readFileSync(join(PHOTOS, file));
+  assert.deepEqual(
+    new Uint8Array(saved),
+    source,
+    "shubhali chegarada asl rasm saqlanishi kerak",
+  );
   store.close();
 });

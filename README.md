@@ -110,6 +110,11 @@ Kodni botga yuborsangiz — tamom, ruxsat oldingiz. Chat raqamini qo'lda
 topish, `.env` ni tahrirlash va botni qayta ishga tushirish **kerak emas**:
 ruxsat bazada saqlanadi.
 
+Bot ishga tushganda menyudagi buyruqlarni va tavsifini o'zi o'rnatadi
+(`setMyCommands`, `setMyDescription`), shuning uchun botni birinchi marta
+ochgan xodim tavsifni va katta **START** tugmasini ko'radi — @BotFather da
+qo'lda hech narsa sozlash kerak emas.
+
 Kod faqat terminalda ko'rinadi, ya'ni uni serverga/kompyuterga kirish huquqi
 bor odam — ya'ni siz — ko'radi. Shuning uchun bu xavfsiz.
 
@@ -123,18 +128,28 @@ kodni yuborsa, u ham ruxsat oladi. `/xodimlar` — ro'yxat, `/xodim_ochir <raqam
 
 ## Ishlatish
 
-```
-/guruh Umra mart          ← qaysi safar guruhi bilan ishlayotganingiz
-<pasport rasmlarini yuborasiz>
-/excel                    ← tayyor jadval
-/zip                      ← rasmlar + jadval bitta arxivda
-```
-
-Rasmlarni **bittalab yoki albom qilib** (bir necha o'nlab) yuborish mumkin.
-Bot ularni yig'ib, birga o'qiydi va **bitta hisobot** beradi:
+Butun ish ikki qadam:
 
 ```
-Natija: 28 / 30 o'qildi · guruh: Umra mart
+/start                            ← bir marta, botni ochganda
+<pasport rasmlarini yuborasiz>    ← bittalab yoki albom qilib
+```
+
+Keyin **hech narsa qilish kerak emas**: rasmlar o'qilgach bot o'zi
+ikkita fayl qaytaradi —
+
+- 📊 **Excel jadval** — ism, familiya va pasport ma'lumotlari;
+- 🗂 **Arxiv (.zip)** — har pasportning rasmi, hujjatning o'ziga qirqilgan,
+  `FAMILIYA_ISM_turi.jpg` nomi bilan.
+
+Avval `/guruh` bilan safar guruhini belgilash kerak edi. Egasining talabi
+bilan u butunlay olib tashlandi: bitta buyruq ham yozmasdan ishlatiladi.
+Fayllar keyin ham kerak bo'lsa — `/excel` va `/zip` hamma yozuvni beradi.
+
+Bot rasmlarni yig'ib, birga o'qiydi va **bitta hisobot** beradi:
+
+```
+Natija: 28 / 30 o'qildi
 
 ✅ KARIMOV AZIZ — AB1234567
 ✅ SALIMOVA NARGIZA — AB7654321
@@ -148,36 +163,38 @@ Diqqat:
 O'qilmadi (2) — qaytadan suratga oling:
 ❌ 7-rasm — MRZ qatorlari o'qilmadi (xira yoki kesilgan)
 ❌ 19-rasm — tekshiruvdan o'tmadi (hujjat raqami) — saqlanmadi
+
+📊 Excel jadval va 🗂 arxiv yuborilmoqda...
+28 ta rasm hujjatning o'ziga qirqildi.
 ```
 
 ### Barcha buyruqlar
 
+Buyruqlar Telegram menyusida ham turadi (`/` tugmasi). Birinchisi —
+`/start`: xodim botni birinchi ochganda Telegram uni katta **START**
+tugmasi qilib ko'rsatadi.
+
 | Buyruq | Nima qiladi |
 |---|---|
-| `/guruh <nom>` | Joriy safar guruhini belgilaydi |
-| `/guruh` | Joriy guruhni ko'rsatadi |
-| `/guruh -` | Guruhni olib tashlaydi |
-| `/guruhlar` | Hamma guruh va kishilar soni |
-| `/royxat` | Joriy guruhdagi kishilar |
-| `/excel` | Joriy guruhni Excel qilib beradi |
-| `/excel hammasi` | Barcha guruhlarni bitta faylda |
-| `/zip` | Joriy guruh: rasmlar + Excel bitta arxivda |
-| `/zip hammasi` | Barcha guruhlar arxivda (har biri o'z papkasida) |
+| `/start` | Boshlash va qisqa yo'riqnoma |
+| `/royxat` | O'qilgan pasportlar ro'yxati |
+| `/excel` | Hammasini bitta Excel jadval qilib beradi |
+| `/zip` | Hammasini rasmlar bilan arxiv qilib beradi |
 | `/viza <pasport> <turi>` | Viza belgilaydi |
 | `/vizalar` | Kimda qanday viza bor |
 | `/vizasiz` | Vizasi belgilanmaganlar |
 | `/vizani_ochir <pasport>` | Viza ma'lumotini olib tashlaydi |
 | `/ogohlik` | Pasporti tez tugaydiganlar |
-| `/ochir AB1234567` | Bitta yozuvni o'chiradi |
-| `/guruhni_ochir Umra mart` | Butun guruhni o'chiradi |
+| `/ochir AB1234567` | Bitta yozuvni va rasmini o'chiradi |
 | `/tozalash` | Saqlash muddati o'tganlarni o'chiradi |
 | `/kod` | Yangi xodim uchun bir martalik kod |
 | `/xodimlar` | Ruxsat berilganlar ro'yxati |
 | `/xodim_ochir 123456789` | Ruxsatni olib tashlaydi |
+| `/yordam` | Shu ro'yxat |
 
 ### Excel faylda nima bo'ladi
 
-Guruh, **Familiya**, **Ism**, **Hujjat turi**, **Davlat**, Jinsi, Tug'ilgan
+**Familiya**, **Ism**, **Hujjat turi**, **Davlat**, Jinsi, Tug'ilgan
 sana, Fuqaroligi, Kod, Pasport raqami, Berilgan sana, Amal muddati,
 **Qolgan (oy)**, **Viza**, **Viza raqami**, **Viza muddati**, **Viza manbasi**,
 JSHSHIR, Tug'ilgan joy, Kim bergan, Qabul qilingan vaqt, Izoh.
@@ -188,14 +205,14 @@ qo'ng'iroq qilish kerakligini ko'rasiz, 50 qatorni ko'zdan kechirmasdan.
 
 ### Zip arxivda nima bo'ladi
 
-`/zip` shunday arxiv beradi:
+Arxiv ichida **bitta papka** bo'ladi:
 
 ```
-umra-mart/
+umra-pasportlar/
   KARIMOV_AZIZ_uzb-pasport.jpg
   SALIMOVA_NARGIZA_uzb-id.jpg
   RAHMONOV_FIRUZ_tjk-pasport.jpg
-  umra-hujjatlar-umra-mart-2026-10-01.xlsx
+  umra-pasportlar-2026-10-01.xlsx
 ```
 
 Har rasm fayli **familiya, ism va hujjat turi** bilan nomlanadi — konsullikka
@@ -207,7 +224,38 @@ Bir xil ism-familiyali ikki kishi bo'lsa, ikkinchisining nomiga pasport raqami
 qo'shiladi — birining rasmi yo'qolib ketmaydi.
 
 Arxiv `ZIP_MAX_MB` (standart 45) dan katta bo'lsa yuborilmaydi: Telegram
-chegarasi 50 MB. Bunda guruhlarga bo'lib oling.
+chegarasi 50 MB. Bunda `/tozalash` yoki `/ochir` bilan keraksiz yozuvlarni
+olib tashlang (to'plamdan keyin keladigan arxivda esa faqat o'sha
+to'plamdagi pasportlar bo'ladi — u kichik).
+
+### Rasm hujjatning o'ziga qirqiladi
+
+Xodim pasportni stol ustida suratga oladi — kadrda stol, qo'l, boshqa
+qog'ozlar ham tushadi. Arxivga esa pasportning **o'zi** kerak. Shuning
+uchun bot rasmni hujjat chegarasi bo'yicha qirqadi:
+
+1. model MRZ ni o'qiyotganda hujjatning chegarasini ham aytadi
+   (`document_box`, 0–1000 oralig'ida — rasm o'lchamidan qat'i nazar);
+2. qirqishning o'zini kod bajaradi (`src/crop.ts`, `jpeg-js` bilan) —
+   modeldan faqat **raqam** keladi, rasmni u o'zgartirmaydi;
+3. chetiga `CROP_MARGIN_PCT` (standart 2%) bo'sh joy qo'shiladi, shunda
+   pasportning qirrasi kesilmaydi.
+
+**Eng muhim qoida: shubha bo'lsa qirqilmaydi.** Yarmi kesilgan pasport
+butun kadrdan yomonroq — ma'lumot yo'qoladi va xodim buni sezmasligi
+ham mumkin. Shuning uchun chegara rad etiladi va rasm asl holida
+saqlanadi, agar u:
+
+- kadrning 25% kengligi / 15% balandligidan kichik bo'lsa (model odatda
+  shunda hujjat o'rniga undagi **suratni** ko'rsatadi);
+- teskari yoki kadrdan chiqib ketgan bo'lsa;
+- deyarli butun kadr bo'lsa (qirqishdan ma'no yo'q);
+- natija 200 pikseldan kichik bo'lsa (MRZ o'qilmay qoladi).
+
+JPEG bo'lmagan rasm ham qirqilmaydi (`jpeg-js` faqat JPEG biladi;
+Telegram oddiy rasmni JPEG qilib beradi, shuning uchun bu kamdan-kam).
+
+Butunlay o'chirish: `.env` da `CROP=off`.
 
 ### Yaxshi rasm uchun
 
@@ -400,6 +448,7 @@ src/
   zip.ts        ZIP arxiv tuzish (zlib bilan, kutubxonasiz)
   visa.ts       Viza turi va holatini kuzatish
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
+  crop.ts       Rasmni hujjatning o'ziga qirqish (shubha bo'lsa — qirqmaydi)
   throttle.ts   So'rovlarni taqsimlash va qayta urinish (API chegarasi)
   image-pick.ts Qaysi o'lchamdagi rasmni olish (chegaraga sig'adigan eng kattasi)
   bot.ts        Suhbat mantig'i (bog'liqliklar tashqaridan — testdan o'tadi)
@@ -417,7 +466,7 @@ scripts/
 Tekshirish:
 
 ```bash
-npm test         # 182 test
+npm test         # 211 test
 npm run typecheck
 ```
 
