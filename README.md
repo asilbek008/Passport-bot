@@ -554,6 +554,7 @@ scripts/
   tekshir.ts    `npm run tekshir` — sozlamalar tashxisi
   zaxira.ts     `npm run zaxira` — shifrlangan zaxira
   tiklash.ts    `npm run tiklash <fayl>` — zaxiradan qaytarish
+  modellar.ts   `npm run modellar` — kalitga ruxsat berilgan modellar
 windows/
   1-ornatish.bat    o'rnatish (ikki marta bosiladi)
   2-boshlash.bat    ishga tushirish, o'zi qayta ko'tariladi
@@ -564,7 +565,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 252 test
+npm test         # 258 test
 npm run typecheck
 ```
 
@@ -629,6 +630,23 @@ botni topmadi, ya'ni token yaroqsiz. Eng ko'p uchraydigan sabablar:
 
 **«BOT_TOKEN bekor qilingan (401)»** — token o'chirilgan. @BotFather →
 `/mybots` → botingiz → *API Token* dan yangisini oling.
+
+**«model topilmadi»** — `GEMINI_MODEL` dagi nom shu kalitda yo'q. Model
+nomlari o'zgaradi va bepul/pullik tarifda ro'yxat boshqacha bo'ladi,
+shuning uchun taxmin qilmasdan Google'ning o'zidan so'raysiz:
+
+```bash
+npm run modellar
+```
+
+U kalitingizga ruxsat berilgan modellarni ko'rsatadi va `.env` ga nima
+yozish kerakligini aytadi.
+
+**«Gemini bu mamlakatdan ishlamaydi»** — Google so'rovni *joylashuv*
+bo'yicha rad etdi (`User location is not supported`). Model ham, kalit
+ham aybdor emas. Yechimlari: `.env` da `PROVIDER=anthropic` qilib
+Claude'ga o'tish, yoki botni Gemini ruxsat berilgan mamlakatdagi
+serverda ishlatish.
 
 **Ko'p rasm «o'qilmadi» bo'lyapti** — MRZ qatorlari xira. Rasmni yorug'roq
 joyda, pasportni tekis qo'yib oling. Skanerdan o'tkazilgan nusxa eng yaxshi

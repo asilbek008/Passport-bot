@@ -279,6 +279,23 @@ async function main(): Promise<number> {
       problem(
         result.ok === false && "problem" in result ? result.problem : "tekshirib bo'lmadi",
       );
+
+      // Provayderning ASL xabari. Tarjima qilingan matn tashxisga
+      // yetarli emas: "model topilmadi" va "joylashuv rad etildi"
+      // bir-biriga o'xshab ketadi, asl xabar esa aniq aytadi.
+      const detail =
+        result.ok === false && "detail" in result ? result.detail : undefined;
+      if (detail) hint(`asl xabar: ${detail.slice(0, 200)}`);
+
+      if (provider === "gemini") {
+        const text = (detail ?? "").toLowerCase();
+        if (text.includes("location")) {
+          hint("Bu JOYLASHUV xatosi — model yoki kalit aybi emas");
+          hint("PROVIDER=anthropic qiling, yoki boshqa mamlakatdagi server");
+        } else if (text.includes("not found") || text.includes("model")) {
+          hint("Ruxsat berilgan modellarni ko'rish:  npm run modellar");
+        }
+      }
     };
 
     try {

@@ -821,8 +821,11 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
       case "refused":
         return { kind: "failed", why: t.reasonRefused };
       case "api_error":
-        // Sabab API darajasida — hujjat ma'lumoti yo'q, yozish xavfsiz
+        // Sabab API darajasida — hujjat ma'lumoti yo'q, yozish xavfsiz.
+        // Asl xabar ham yoziladi: tarjima qilingan matn tashxisga
+        // yetarli emas, Google nima deganini bilish kerak.
         console.error(`[api] ${result.problem}`);
+        if (result.detail) console.error(`[api] asl xabar: ${result.detail}`);
         return { kind: "api", why: result.problem, retryable: result.retryable };
       default:
         return { kind: "failed", why: t.reasonUnreadable };

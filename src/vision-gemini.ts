@@ -97,6 +97,9 @@ export function geminiFailure(err: unknown): ReadResult {
     reason: "api_error",
     problem,
     retryable,
+    // Google'ning asl xabari — faqat terminal jurnaliga chiqadi.
+    // Bu API darajasidagi xato, ichida hujjat ma'lumoti bo'lmaydi.
+    detail: (err instanceof Error ? err.message : String(err)).slice(0, 400),
   });
 
   const message = err instanceof Error ? err.message : String(err);
@@ -116,9 +119,34 @@ export function geminiFailure(err: unknown): ReadResult {
       false,
     );
   }
-  if (code === 404 || lower.includes("not found") || lower.includes("is not supported")) {
+  // JOYLASHUV — modeldan OLDIN tekshiriladi.
+  //
+  // Google bu xatoni "User location is not supported for the API use"
+  // deb beradi. Avval u 404 bilan bir qatorda turgan edi va
+  // `includes("is not supported")` tufayli "model topilmadi" deb
+  // ko'rsatilardi — ya'ni bot butunlay boshqa narsani aytardi va
+  // odam GEMINI_MODEL ni bekorga o'zgartirib yurardi.
+  if (lower.includes("user location") || lower.includes("location is not supported")) {
     return fail(
-      `model topilmadi — .env dagi GEMINI_MODEL xato ("${config.geminiModel}")`,
+      "Gemini bu mamlakatdan ishlamaydi — Google so'rovni joylashuv " +
+        "bo'yicha rad etdi (model yoki kalit aybi emas). " +
+        "Yechimlari: `PROVIDER=anthropic` qilib Claude'ga o'tish, " +
+        "yoki botni Gemini ruxsat berilgan mamlakatdagi serverda ishlatish",
+      false,
+    );
+  }
+
+  // MODEL — faqat haqiqatan model haqida bo'lsa.
+  // `includes("not found")` ni o'zi yetarli emas edi: boshqa xatolar ham
+  // shu so'z bilan keladi, shuning uchun modelga ishora bo'lishi kerak.
+  if (
+    code === 404 ||
+    lower.includes("is not found for api version") ||
+    (lower.includes("not found") && lower.includes("model"))
+  ) {
+    return fail(
+      `model topilmadi — .env dagi GEMINI_MODEL ("${config.geminiModel}") ` +
+        "bu kalitda yo'q. Ruxsat berilganlarni ko'rish: `npm run modellar`",
       false,
     );
   }

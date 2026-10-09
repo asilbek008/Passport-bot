@@ -130,7 +130,18 @@ export type ReadResult =
    * Bu rasmning aybi emas — xodim buni bilishi kerak, aks holda 30 rasmni
    * qayta suratga olib vaqt yo'qotadi.
    */
-  | { ok: false; reason: "api_error"; problem: string; retryable: boolean };
+  | {
+      ok: false;
+      reason: "api_error";
+      problem: string;
+      retryable: boolean;
+      /**
+       * Provayderning ASL xato xabari — faqat terminal jurnaliga.
+       * Telegramga chiqmaydi: xodimga tushunarli `problem` yetarli,
+       * tashxis uchun esa asl matn kerak bo'ladi.
+       */
+      detail?: string;
+    };
 
 export const MEDIA = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
 export type Media = (typeof MEDIA)[number];

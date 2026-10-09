@@ -129,3 +129,74 @@ test("Gemini modelining standarti bor", () => {
     else process.env.GEMINI_MODEL = saved;
   }
 });
+
+// --- Joylashuv va model xatolari ARALASHMASLIGI ---
+//
+// Bu haqiqiy xato edi: Google mamlakat cheklovini "User location is not
+// supported for the API use" deb beradi, kodda esa `includes("is not
+// supported")` 404 bilan bir qatorda turgan — natijada bot "model
+// topilmadi" deb ko'rsatardi va odam GEMINI_MODEL ni bekorga
+// o'zgartirib yurardi.
+
+test("joylashuv xatosi model xatosi deb ko'rsatilmaydi", () => {
+  const err = Object.assign(
+    new Error(
+      '{"error":{"code":400,"message":"User location is not supported for the API use.","status":"FAILED_PRECONDITION"}}',
+    ),
+    { status: 400 },
+  );
+  const result = geminiFailure(err);
+  assert.equal(result.ok, false);
+  assert.ok(result.ok === false && "problem" in result);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+
+  assert.match(problem, /mamlakatdan ishlamaydi/, "joylashuv deb aytilishi kerak");
+  assert.ok(!/GEMINI_MODEL/.test(problem), "model sozlamasiga ishora qilmasligi kerak");
+  assert.ok(!/model topilmadi/.test(problem));
+  // Qayta urinishdan ma'no yo'q — joylashuv o'zgarmaydi
+  assert.equal(result.ok === false && "retryable" in result && result.retryable, false);
+});
+
+test("joylashuv xatosida yechim aytiladi", () => {
+  const err = new Error("User location is not supported for the API use.");
+  const result = geminiFailure(err);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+  assert.match(problem, /anthropic/i, "boshqa provayder taklif qilinadi");
+});
+
+test("haqiqiy model xatosi model xatosi bo'lib qoladi", () => {
+  const err = Object.assign(
+    new Error(
+      'models/gemini-9-flash is not found for API version v1beta, or is not supported for generateContent',
+    ),
+    { status: 404 },
+  );
+  const result = geminiFailure(err);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+  assert.match(problem, /model topilmadi/);
+  assert.match(problem, /npm run modellar/, "ro'yxatni ko'rish yo'li aytilishi kerak");
+});
+
+test("404 bo'lmasa ham 'not found for API version' model xatosi", () => {
+  const err = new Error(
+    "models/yoq-model is not found for API version v1beta, or is not supported",
+  );
+  const result = geminiFailure(err);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+  assert.match(problem, /model topilmadi/);
+});
+
+test("asl xabar tashxis uchun saqlanadi", () => {
+  const err = new Error("User location is not supported for the API use.");
+  const result = geminiFailure(err);
+  const detail = result.ok === false && "detail" in result ? result.detail : undefined;
+  assert.ok(detail, "asl xabar saqlanishi kerak");
+  assert.match(detail!, /User location/, "Google nima deganini bilish kerak");
+});
+
+test("asl xabar juda uzun bo'lsa qisqartiriladi", () => {
+  const err = new Error("x".repeat(2000));
+  const result = geminiFailure(err);
+  const detail = result.ok === false && "detail" in result ? result.detail : undefined;
+  assert.ok(detail && detail.length <= 400);
+});

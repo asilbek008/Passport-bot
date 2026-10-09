@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "tekshir": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tekshir.ts",
     "zaxira": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/zaxira.ts",
-    "tiklash": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tiklash.ts"
+    "tiklash": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tiklash.ts",
+    "modellar": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/modellar.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
