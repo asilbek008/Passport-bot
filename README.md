@@ -670,6 +670,15 @@ qayta urinib ko'rgan. Bir-ikki daqiqa kutib qayta yuboring; takrorlansa
 **Qimmatga tushyapti** — `.env` da `MODEL=claude-haiku-4-5` qilib ko'ring,
 lekin avval 10–15 pasportda sinab, natijalarni qo'lda tekshirib chiqing.
 
+**Kompyuter yonganda qora cmd oynasi chiqyapti** — avtomatik ishga
+tushirish yoqilgan. `windows\3-avtomatik.bat` → `2` bosasiz: u Startup
+papkasidagi yorliqni ham, Task Scheduler'dagi vazifani ham o'chiradi.
+Holatni ko'rish — shu faylda `3`.
+
+Oyna boshqa sababdan ham chiqishi mumkin: Windows 11 o'chirishdan oldin
+ochiq turgan dasturlarni qayta ochadi. Uni o'chirish: *Settings →
+Accounts → Sign-in options → «Automatically save my restartable apps»* → Off.
+
 **«Bot allaqachon ishlayapti»** — bot avtomatik ishga tushgan va orqa
 fonda ishlayapti, ikkinchi nusxa esa ataylab to'xtatildi. Holatni
 tekshirish: `windows\3-avtomatik.bat` → 3. Bu xato emas — bot ishlayapti,
