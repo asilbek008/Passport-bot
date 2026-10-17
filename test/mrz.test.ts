@@ -237,3 +237,22 @@ test("qatorlar shakli to'g'ri kelmasa, nima bo'lgani aytiladi", () => {
     assert.doesNotMatch((err as Error).message, /QATOR/, "matn chiqmasin");
   }
 });
+
+test("model MRZ ni bitta uzun satr qilib bersa ham o'qiladi", () => {
+  // Ba'zan model qatorlarni ajratmasdan, hammasini qo'shib yuboradi.
+  // Avval bu 90 belgili bitta qator bo'lib, hech qaysi formatga
+  // tushmasdi va "MRZ topilmadi" bo'lardi
+  const lines = uzbekId();
+  const mrz = parseMrz(lines.join(""), REF);
+  assert.equal(mrz.format, "TD1");
+  assert.equal(mrz.valid, true);
+  assert.equal(mrz.surname, "BOYQOBILOV");
+});
+
+test("pasport MRZ'si ham bitta satr bo'lsa bo'linadi", () => {
+  const glued = `${TD3_L1}${TD3_L2}`;
+  assert.equal(glued.length, 88);
+  const mrz = parseMrz(glued, REF);
+  assert.equal(mrz.format, "TD3");
+  assert.equal(mrz.surname, "ERIKSSON");
+});

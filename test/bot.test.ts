@@ -1615,3 +1615,134 @@ test("ID kartaning old tomoni yuborilsa — orqa tomonini olish aytiladi", async
   assert.equal(store.count(), 0);
   store.close();
 });
+
+// ───────────── Ikkinchi urinish: hujjatga kesib, yaqindan o'qish ─────────────
+//
+// Modellar rasmni o'z o'lchamiga kichraytiradi. ID karta kadrning
+// uchdan birida bo'lsa, kichraytirishdan keyin MRZ bir necha pikselga
+// tushib qoladi va o'qilmaydi — hujjat esa odam ko'ziga aniq ko'rinadi.
+// Shuning uchun model "o'qiy olmadim" desa, rasm hujjatga kesilib,
+// bir marta qayta so'raladi.
+
+/** Kadr o'rtasida kichik "hujjat" bo'lgan haqiqiy JPEG. */
+async function smallDocumentJpeg() {
+  const { encode } = await import("jpeg-js");
+  const width = 1200;
+  const height = 900;
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      // Hujjat kadrning 35%–65% i — uzoqdan olingan ID karta
+      const inDoc =
+        x > width * 0.35 && x < width * 0.65 && y > height * 0.4 && y < height * 0.62;
+      data[i] = inDoc ? 235 : 70;
+      data[i + 1] = inDoc ? 228 : 72;
+      data[i + 2] = inDoc ? 210 : 76;
+      data[i + 3] = 255;
+    }
+  }
+  return new Uint8Array(encode({ data, width, height }, 92).data);
+}
+
+test("o'qilmagan rasm hujjatga kesilib, yaqindan qayta o'qiladi", async () => {
+  const mrz = td3({
+    surname: "YAQINOV", given: "SARDOR", docNumber: "AB7070707",
+    birth: "900101", sex: "M", expiry: "310101",
+  });
+  const source = await smallDocumentJpeg();
+
+  const { deps, edits, store, calls } = makeDeps(
+    {
+      // Birinchi urinish: o'qilmadi, lekin model hujjat qayerdaligini aytdi
+      f1: [
+        {
+          ok: false,
+          reason: "unreadable",
+          problem: "MRZ ko'rinmadi",
+          box: { x0: 350, y0: 400, x1: 650, y1: 620 },
+        },
+        // Ikkinchi urinish — kesilgan rasmda o'qildi
+        okResult(mrz),
+      ],
+    },
+    source,
+  );
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 2, "ikkinchi urinish bo'lishi kerak");
+  assert.equal(store.count(), 1, "ikkinchi urinishda o'qilgani saqlansin");
+  assert.equal(store.all()[0].surname, "YAQINOV");
+
+  const report = edits.map((e) => e.text).join("\n");
+  assert.match(report, /1 \/ 1 o'qildi/);
+  assert.match(report, /yaqindan qayta o'qildi/, "xodim buni bilishi kerak");
+  store.close();
+});
+
+test("ID kartaning old tomonida qayta urinilmaydi — bekorga pul ketmasin", async () => {
+  // Yaqindan qarash yordam bermaydi: MRZ u tomonda umuman yo'q
+  const source = await smallDocumentJpeg();
+  const { deps, edits, store, calls } = makeDeps(
+    {
+      f1: [
+        {
+          ok: false,
+          reason: "id_front",
+          problem: "old tomoni",
+          box: { x0: 350, y0: 400, x1: 650, y1: 620 },
+        },
+      ],
+    },
+    source,
+  );
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 1, "faqat bitta so'rov ketishi kerak");
+  assert.match(edits.map((e) => e.text).join("\n"), /ORQA tomonida/);
+  assert.equal(store.count(), 0);
+  store.close();
+});
+
+test("chegara aytilmagan bo'lsa qayta urinilmaydi", async () => {
+  // Qayerni kesishni bilmaymiz — bekorga so'rov yubormaymiz
+  const source = await smallDocumentJpeg();
+  const { deps, store, calls } = makeDeps(
+    { f1: [{ ok: false, reason: "unreadable", problem: "xira" }] },
+    source,
+  );
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 1);
+  assert.equal(store.count(), 0);
+  store.close();
+});
+
+test("ikkinchi urinish ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
+  const source = await smallDocumentJpeg();
+  const { deps, edits, store, calls } = makeDeps(
+    {
+      f1: [
+        {
+          ok: false,
+          reason: "id_back_unclear",
+          problem: "xira",
+          box: { x0: 350, y0: 400, x1: 650, y1: 620 },
+        },
+        { ok: false, reason: "unreadable", problem: "baribir xira" },
+      ],
+    },
+    source,
+  );
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 2);
+  const report = edits.map((e) => e.text).join("\n");
+  assert.match(report, /yaqinroqdan/, "birinchi urinishning aniq sababi qolsin");
+  assert.equal(store.count(), 0);
+  store.close();
+});

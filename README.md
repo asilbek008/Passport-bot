@@ -385,6 +385,24 @@ Qaysi tomoni ekanini model aytadi (`id_side`). Bu muhim: orqa tomonini
 yuborgan odamga «teskari qiling» desak, u kartani aylantirib
 yuraveradi va muammo hech qachon hal bo'lmaydi.
 
+**Birinchi urinishda o'qilmasa — hujjatga kesib, yaqindan qayta
+o'qiladi.** Modellar rasmni o'z o'lchamiga kichraytirib oladi. Xodim ID
+kartani kadrning uchdan birida suratga olsa, kichraytirishdan keyin MRZ
+qatorlari bir necha pikselga tushib qoladi va o'qilmaydi — hujjat esa
+odam ko'ziga aniq ko'rinib turadi. Pasportda bu kamroq uchraydi (u
+kattaroq, MRZ ham yirikroq), **ID kartada esa doimiy muammo**.
+
+Shuning uchun model "o'qiy olmadim" desa, bot u aytgan chegara bo'yicha
+rasmni hujjatga kesadi va **bir marta** qayta so'raydi: endi hujjat
+butun kadrni egallaydi va MRZ bir necha barobar yirik bo'ladi. Hisobotda
+"N tasi yaqindan qayta o'qildi" deb aytiladi — xodim keyingi safar
+hujjatni kadrga to'ldirib oladi.
+
+Qayta urinish faqat "ko'rinmadi" turidagi sabablarda bo'ladi. ID
+kartaning **old tomoni** yuborilgan bo'lsa yoki rasmda hujjat umuman
+bo'lmasa, qayta so'ralmaydi — yaqindan qarash yordam bermaydi, bekorga
+pul ketadi.
+
 **To'ldiruvchi `<` lar.** Modellar MRZ dagi `<` larning sonini tez-tez
 adashadi — ID kartada ular uzun qator bo'lib ketgani uchun ayniqsa.
 Avval bitta `<` kam o'qilsa, qator (29 belgi) butunlay tashlab
@@ -394,6 +412,9 @@ to'g'rilanadi — faqat to'ldiruvchi `<` hisobiga va **tekshiruv
 raqamiga tegmasdan**. Ma'noli belgi yetishsa tiklanmaydi: u yerda
 taxmin qilish hujjat raqamini buzib qo'yardi, tekshiruv raqami esa
 buni ushlaydi.
+
+**Bitta uzun satr.** Model qatorlarni ajratmasdan, hammasini qo'shib
+yuborishi mumkin (90 belgi = 3×30). Bunday javob ham bo'linadi.
 
 ### Yaxshi rasm uchun
 
@@ -669,8 +690,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 319 test — bo'laklar alohida
-npm run sinov    # 30 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 325 test — bo'laklar alohida
+npm run sinov    # 34 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -689,13 +710,14 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan olti holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan yetti holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
 qolmasligi, hujjat tekis va to'g'ri tomoni bilan chiqishi), ID
-kartaning old tomoni yuborilganda orqa tomonini olish aytilishi, va
-orqa tomoni xira bo'lganda «teskari qiling» deyilmasligi.
+kartaning old tomoni yuborilganda orqa tomonini olish aytilishi, orqa
+tomoni xira bo'lganda «teskari qiling» deyilmasligi, va kadrda kichik
+ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

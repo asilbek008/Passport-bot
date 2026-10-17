@@ -152,6 +152,14 @@ function td3({ surname, given, docNum, nat, birth, sex, expiry }) {
   return [l1, l2];
 }
 
+/** O'zbekiston ID kartasi ko'rinishidagi TD1 MRZ (3 × 30). */
+function td1({ surname, given, docNum, nat, birth, sex, expiry, pinfl }) {
+  const l1 = `ID${nat}${docNum}${checkDigit(docNum)}${pinfl}`.padEnd(30, "<");
+  let l2 = `${birth}${checkDigit(birth)}${sex}${expiry}${checkDigit(expiry)}${nat}${"<".repeat(11)}`;
+  l2 += checkDigit(l1.slice(5, 30) + l2.slice(0, 7) + l2.slice(8, 15) + l2.slice(18, 29));
+  return [l1, l2, `${surname}<<${given.replace(/ /g, "<")}`.padEnd(30, "<")];
+}
+
 const people = [
   {
     file_id: "sinov-rasm-1",
@@ -209,6 +217,24 @@ const held = {
   file: "bekzod_qolboyev_qizil.jpg",
 };
 people.push(held);
+
+// ID karta: kadrda kichik bo'lgani uchun birinchi urinishda o'qilmaydi
+const idCard = {
+  file_id: "sinov-rasm-id",
+  image: passportImage(1400, 1050),
+  mrz: td1({
+    surname: "XOLIQOV",
+    given: "ZAFAR",
+    docNum: "AB7654321",
+    nat: "UZB",
+    birth: "920505",
+    sex: "M",
+    expiry: "330707",
+    pinfl: "31234567890123",
+  }),
+  file: "zafar_xoliqov_id.jpg",
+};
+people.push(idCard);
 
 const byLength = new Map(people.map((p) => [p.image.bytes.length, p]));
 const byFileId = new Map(people.map((p) => [p.file_id, p]));
@@ -294,6 +320,44 @@ async function withBot(mode, steps) {
           },
           403,
         );
+      }
+      if (mode === "idzoom") {
+        const body = JSON.parse(raw.toString("utf8"));
+        const part = body.contents?.[0]?.parts?.find((p) => p.inlineData);
+        const bytes = Buffer.from(part.inlineData.data, "base64");
+        // Asl rasm — "o'qiy olmadim, lekin hujjat mana shu yerda";
+        // kesilgan rasm (boshqa hajmda) — MRZ o'qiladi
+        const original = bytes.length === idCard.image.bytes.length;
+        geminiHits.push(original ? "asl rasm" : "kesilgan rasm");
+        return send({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      mrz_lines: original ? [] : idCard.mrz,
+                      issue_date: null,
+                      place_of_birth: null,
+                      authority: null,
+                      document_kind: "id_card",
+                      id_side: "back",
+                      mrz_readable: !original,
+                      problem: original ? "qatorlar mayda chiqdi" : null,
+                      visa_type: null,
+                      document_box: idCard.image.box,
+                      document_quad: null,
+                      rotation: 0,
+                    }),
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 },
+        });
       }
       if (mode === "idback") {
         // Orqa tomoni yuborilgan, lekin MRZ xira
@@ -871,6 +935,44 @@ async function idKartaOrqaXira() {
   });
 }
 
+// ───── 7. ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qiladi ─────
+
+async function idKartaYaqindan() {
+  console.log("\n7) ID karta kadrda kichik — kesib, yaqindan qayta o'qiladi");
+  await withBot("idzoom", async (bot) => {
+    bot.photo(idCard, "albom-zoom");
+    const picked = await bot.wait(
+      "to'plam tugmalari",
+      (c) => c.method === "sendMessage" && c.body.reply_markup?.inline_keyboard,
+    );
+    const report = bot.reports();
+    check("ID karta o'qildi (1 / 1)", /1 \/ 1 o'qildi/.test(report));
+    check(
+      "Ikkinchi urinish bo'ldi va aytildi",
+      bot.geminiHits.length === 2 && /yaqindan qayta o'qildi/.test(report),
+      bot.geminiHits.join(" → "),
+    );
+    check(
+      "Ism va hujjat turi to'g'ri o'qildi",
+      /XOLIQOV/.test(report) && /ID kartasi/.test(report),
+      (report.match(/✅.*/) ?? [""])[0].slice(0, 70),
+    );
+
+    const id = picked.body.reply_markup.inline_keyboard[0][0].callback_data.split(":")[1];
+    bot.button(`zip:${id}`);
+    const zip = await bot.wait(
+      "zip arxivi",
+      (c) => c.method === "sendDocument" && c.body.name.endsWith(".zip"),
+    );
+    const names = zipNames(bot.file(zip.body.name));
+    check(
+      "Arxivda ID karta nomi bilan turibdi",
+      names.some((n) => n.endsWith(idCard.file)),
+      names.map((n) => n.split("/").pop()).join(", "),
+    );
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -919,6 +1021,7 @@ try {
   await qoldaUshlangan();
   await idKartaOldTomoni();
   await idKartaOrqaXira();
+  await idKartaYaqindan();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

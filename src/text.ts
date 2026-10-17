@@ -368,6 +368,8 @@ export const t = {
     cropped?: number;
     /** Nechta rasmning perspektivasi to'g'rilandi (skanerdek tekis bo'ldi) */
     flattened?: number;
+    /** Nechtasi kesilgan rasmdan, yaqindan qayta o'qildi */
+    zoomed?: number;
     /** Nechta rasm to'g'ri holatga burildi */
     turned?: number;
     /** Qirqilgan, lekin hujjat baribir kichik qolgan rasmlar soni */
@@ -383,6 +385,15 @@ export const t = {
     const read = parts.ok.length + visaOk.length;
 
     out.push(`*Natija:* ${read} / ${parts.total} o'qildi`);
+
+    // Yaqindan qayta o'qilganlar: xodim buni bilsa, keyingi safar
+    // hujjatni kadrga to'ldirib oladi va bot tezroq ishlaydi
+    if (parts.zoomed && parts.zoomed > 0) {
+      out.push(
+        `_${parts.zoomed} tasi birinchi urinishda o'qilmadi — hujjatga ` +
+          "kesib, yaqindan qayta o'qildi. Hujjat kadrni to'ldirsa tezroq bo'ladi._",
+      );
+    }
 
     if (parts.ok.length > 0) {
       out.push("", ...parts.ok);

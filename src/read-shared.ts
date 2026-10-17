@@ -188,6 +188,13 @@ export type ReadResult =
    */
   | {
       ok: false;
+      /**
+       * Hujjatning kadrdagi joyi — MODEL o'qiy olmagan bo'lsa ham
+       * ko'pincha aytadi. Shu bo'yicha rasmni hujjatga kesib, YAQINDAN
+       * qayta o'qishga urinamiz (`bot.ts` `readOne`).
+       */
+      box?: Box | null;
+      quad?: Quad | null;
       reason:
         | "unreadable"
         | "not_a_document"
@@ -207,6 +214,13 @@ export type ReadResult =
    */
   | {
       ok: false;
+      /**
+       * Hujjatning kadrdagi joyi — MODEL o'qiy olmagan bo'lsa ham
+       * ko'pincha aytadi. Shu bo'yicha rasmni hujjatga kesib, YAQINDAN
+       * qayta o'qishga urinamiz (`bot.ts` `readOne`).
+       */
+      box?: Box | null;
+      quad?: Quad | null;
       reason: "api_error";
       problem: string;
       retryable: boolean;
@@ -303,6 +317,8 @@ export function interpret(text: string, today: Date): ReadResult {
         (out.id_side == null && out.mrz_lines.length === 0));
     return {
       ok: false,
+      box: parseBox(out.document_box),
+      quad: parseQuad(out.document_quad),
       reason: front
         ? "id_front"
         : out.document_kind === "id_card"
@@ -323,7 +339,13 @@ export function interpret(text: string, today: Date): ReadResult {
       // hujjat ma'lumoti yo'q — faqat qatorlar soni va uzunligi.
       // Shuning uchun xodimga ko'rsatish xavfsiz va foydali: "xira yoki
       // kesilgan" degan umumiy javobdan ko'ra nima bo'lgani aniq bo'ladi.
-      return { ok: false, reason: "mrz_shape", problem: err.message };
+      return {
+        ok: false,
+        reason: "mrz_shape",
+        problem: err.message,
+        box: parseBox(out.document_box),
+        quad: parseQuad(out.document_quad),
+      };
     }
     throw err;
   }

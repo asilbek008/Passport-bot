@@ -137,10 +137,34 @@ const trimFiller = (s: string) => s.replace(/</g, "").trim();
  * Matndan MRZ qatorlarini ajratib oladi: faqat MRZ belgilaridan tashkil
  * topgan va uzunligi 30/36/44 ga teng qatorlar qoldiriladi.
  */
+/**
+ * Model MRZ ni bitta uzun satr qilib bersa, qatorlarga bo'ladi.
+ *
+ * Buni ham ko'ramiz: "IDUZB...<<<9001158M...<<<BOYQOBILOV<<..." — uch
+ * qator bo'sh joysiz qo'shilib ketgan. Avval bunday javob 90 belgili
+ * bitta qator bo'lib, hech qaysi formatga tushmay "MRZ topilmadi"
+ * bo'lardi. Faqat ANIQ karralar bo'linadi: 90=3×30, 88=2×44, 72=2×36.
+ */
+function unglue(line: string): string[] {
+  const known: [number, number][] = [
+    [90, 30],
+    [88, 44],
+    [72, 36],
+  ];
+  for (const [total, size] of known) {
+    if (line.length !== total) continue;
+    const out: string[] = [];
+    for (let i = 0; i < total; i += size) out.push(line.slice(i, i + size));
+    return out;
+  }
+  return [line];
+}
+
 export function extractLines(text: string): string[] {
   return text
     .split(/\r?\n/)
     .map((l) => l.toUpperCase().replace(/[^A-Z0-9<]/g, ""))
+    .flatMap(unglue)
     // Uzunlik bo'yicha qat'iy filtr YO'Q: model to'ldiruvchi '<' larni
     // bitta kam yoki ortiq o'qishi juda ko'p uchraydi (ID kartada ular
     // uzun qator bo'lib ketadi). Bunday qatorni tashlab yuborsak, butun

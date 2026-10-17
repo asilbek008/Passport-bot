@@ -32,6 +32,7 @@ import {
 import type { Store, Pilgrim } from "./store.ts";
 import { Telegram, type TgUpdate, type Button } from "./telegram.ts";
 import type { readDocument } from "./vision.ts";
+import type { ReadResult } from "./read-shared.ts";
 
 export type Deps = {
   tg: Telegram;
@@ -701,6 +702,8 @@ export async function processBatch(
   let croppedCount = 0;
   /** Nechta rasm perspektivasi to'g'rilandi (skanerdek tekis bo'ldi) */
   let flattenedCount = 0;
+  /** Nechtasi birinchi urinishda o'qilmay, kesilgan rasmdan o'qildi */
+  let zoomedCount = 0;
   /** Nechta rasm to'g'ri holatga burildi */
   let turnedCount = 0;
   /**
@@ -784,6 +787,7 @@ export async function processBatch(
     }
 
     const { mrz, extra, image } = outcome;
+    if (outcome.zoomed) zoomedCount++;
 
     // Hujjat turi va davlati MRZ'dan — taxmin yo'q
     const type = documentType(mrz);
@@ -947,6 +951,7 @@ export async function processBatch(
     files: batchRows.length > 0,
     cropped: croppedCount,
     flattened: flattenedCount,
+    zoomed: zoomedCount,
     turned: turnedCount,
     lowRes: lowResCount,
     notCropped,
@@ -1002,10 +1007,80 @@ type Outcome =
       quad: Quad | null;
       /** Rasmni to'g'rilash uchun burish: 0 | 90 | 180 | 270 */
       rotation: Rotation;
+      /** Birinchi urinishda o'qilmay, kesilgan rasmdan o'qildimi */
+      zoomed: boolean;
     }
   | { kind: "failed"; why: string }
   /** API'ning o'zi ishlamadi — qolgan rasmlarni o'qishdan ma'no yo'q */
   | { kind: "api"; why: string; retryable: boolean };
+
+/**
+ * Birinchi urinishda o'qilmagan rasmni HUJJATGA KESIB qayta o'qiydi.
+ *
+ * NEGA KERAK: modellar rasmni o'z o'lchamiga kichraytirib oladi. Xodim
+ * ID kartani kadrning uchdan birida suratga olsa, kichraytirishdan keyin
+ * MRZ qatorlari bir necha pikselga tushib qoladi va o'qilmaydi — hujjat
+ * esa odam ko'ziga aniq ko'rinib turadi. Pasportda bu kamroq uchraydi
+ * (u kattaroq, MRZ ham yirikroq), ID kartada esa doimiy muammo.
+ *
+ * Shuning uchun model "o'qiy olmadim" desa, u AYTGAN chegara bo'yicha
+ * rasmni hujjatga kesib, bir marta qayta so'raymiz: endi hujjat butun
+ * kadrni egallaydi va MRZ bir necha barobar yirik bo'ladi.
+ *
+ * Ikkinchi urinish ham ishlamasa — BIRINCHI natija qaytadi: uning sababi
+ * aniqroq bo'ladi (masalan "ID kartaning old tomoni").
+ */
+async function closerLook(
+  first: ReadResult,
+  image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
+  deps: Deps,
+  now: Date,
+): Promise<{
+  result: ReadResult;
+  zoomed: boolean;
+  box: Box | null;
+  quad: Quad | null;
+}> {
+  // Chegara nafaqat o'qilgan natijada, nosozlikda ham bo'lishi mumkin
+  const boxOf = (r: ReadResult): Box | null =>
+    r.ok ? r.box : "box" in r ? (r.box ?? null) : null;
+  const quadOf = (r: ReadResult): Quad | null =>
+    r.ok ? r.quad : "quad" in r ? (r.quad ?? null) : null;
+
+  const keep = {
+    result: first,
+    zoomed: false,
+    box: boxOf(first),
+    quad: quadOf(first),
+  };
+  if (first.ok) return keep;
+
+  // Faqat "ko'rinmadi" turidagi sabablar. "Old tomoni" yoki "hujjat emas"
+  // bo'lsa yaqindan qarash yordam bermaydi — bekorga pul ketadi
+  const worthRetry =
+    first.reason === "unreadable" ||
+    first.reason === "id_back_unclear" ||
+    first.reason === "mrz_shape";
+  if (!worthRetry) return keep;
+
+  const box = keep.box;
+  const quad = keep.quad;
+  if (!box && !quad) return keep; // qayerni kesishni bilmaymiz
+
+  // Chet kengroq (6%): MRZ hujjatning eng chetida, kesib qo'ymaylik
+  const closer = cropToDocument(image, { box, quad, marginPct: 6 });
+  if (!closer.cropped) return keep;
+
+  // Chegara shu yerda ham hisoblanadi: ikkinchi so'rov ham API chegarasiga
+  // kiradi
+  await deps.throttle?.wait();
+  const second = await deps.read({ bytes: closer.bytes, mime: "image/jpeg" }, now);
+
+  // Ikkinchisi o'qigan bo'lsa shuni olamiz, aks holda birinchisi qoladi
+  return second.ok
+    ? { result: second, zoomed: true, box, quad }
+    : keep;
+}
 
 /**
  * Bitta rasmni yuklab, o'qib, natijasini qaytaradi.
@@ -1024,7 +1099,9 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
   }
 
   try {
-    const result = await deps.read(image, now);
+    const first = await deps.read(image, now);
+    // O'qilmagan bo'lsa — rasmni hujjatga kesib, YAQINDAN qayta o'qiymiz
+    const { result, zoomed, box, quad } = await closerLook(first, image, deps, now);
 
     if (result.ok) {
       return {
@@ -1037,9 +1114,14 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
           visaType: result.visaType,
         },
         image,
-        box: result.box,
-        quad: result.quad,
+        // DIQQAT: ikkinchi urinish KESILGAN rasmda bajarilgan bo'lsa,
+        // uning chegarasi o'sha kesilgan kadrga nisbatan bo'ladi va asl
+        // rasmga to'g'ri kelmaydi. Shuning uchun arxiv uchun birinchi
+        // urinishning chegarasi olinadi.
+        box,
+        quad,
         rotation: result.rotation,
+        zoomed,
       };
     }
 
