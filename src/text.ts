@@ -9,6 +9,7 @@
 import { config } from "./config.ts";
 import type { Pilgrim } from "./store.ts";
 import { humanSize } from "./image-pick.ts";
+import { localDay } from "./day.ts";
 import {
   VISA_LABELS,
   VISA_ICON,
@@ -141,6 +142,10 @@ export const t = {
     "`/vizasiz` — vizasi yo'qlar",
     "`/vizani_ochir <pasport>` — viza ma'lumotini olib tashlash",
     "`/ogohlik` — pasporti tez tugaydiganlar",
+    "",
+    "*O'z ishingiz:*",
+    "`/profil` — nechta hujjat o'qigansiz, kunlik chegara",
+    "`/statistika` — butun bot bo'yicha sonlar (faqat bot egasiga)",
     "",
     "*Tekshirish:*",
     "`/sinov` — tugmalar ishlayaptimi (hech narsa saqlanmaydi)",
@@ -362,6 +367,108 @@ export const t = {
     `ℹ️ ${index}-rasm — ID kartaning ikkinchi tomoni (ma'lumot MRZ'dan o'qildi)`,
 
   failLine: (index: number, why: string) => `❌ ${index}-rasm — ${why}`,
+
+
+  // --- Profil va statistika ---
+
+  /**
+   * Xodimning o'z profili.
+   *
+   * Hujjat ma'lumoti yo'q — faqat SONLAR: xodim o'z ishini ko'radi,
+   * mijozlarning ismi bu yerda chiqmaydi.
+   */
+  profile: (p: {
+    chatId: number;
+    total: number;
+    today: number;
+    month: number;
+    lastAt: string | null;
+    joinedAt: string | null;
+    usedToday: number;
+    limit: number;
+    superadmin: boolean;
+  }) => {
+    const out = [
+      `*Profil*${p.superadmin ? " — bot egasi" : ""}`,
+      "",
+      `Telegram raqami: \`${p.chatId}\``,
+      p.joinedAt ? `Ro'yxatga olingan: ${localDay(p.joinedAt)}` : "",
+      "",
+      "*Siz o'qigan hujjatlar*",
+      `Bugun: *${p.today}*`,
+      `Oxirgi 30 kunda: *${p.month}*`,
+      `Jami: *${p.total}*`,
+      p.lastAt ? `Oxirgi hujjat: ${localDay(p.lastAt)}` : "",
+      "",
+      `*Bugungi rasm chegarasi:* ${p.usedToday} / ${p.limit}`,
+      p.usedToday >= p.limit
+        ? "_Chegara tugadi — ertaga yangilanadi._"
+        : `_Yana ${p.limit - p.usedToday} ta rasm yuborishingiz mumkin._`,
+    ];
+    if (p.superadmin) {
+      out.push("", "Butun bot bo'yicha sonlar: /statistika");
+    }
+    return out.filter((line) => line !== "").join("\n");
+  },
+
+  /** Faqat egasi uchun: butun bot bo'yicha sonlar. */
+  stats: (s: {
+    documents: number;
+    today: number;
+    week: number;
+    month: number;
+    photos: number;
+    withVisa: number;
+    expiringSoon: number;
+    firstAt: string | null;
+    operators: number;
+    byKind: { label: string; n: number }[];
+    perOperator: { chatId: number; total: number; today: number; lastAt: string | null }[];
+    me: number;
+    months: number;
+  }) => {
+    const out = [
+      "*Statistika* — butun bot bo'yicha",
+      "",
+      "*Hujjatlar*",
+      `Bugun: *${s.today}*`,
+      `Oxirgi 7 kunda: *${s.week}*`,
+      `Oxirgi 30 kunda: *${s.month}*`,
+      `Jami: *${s.documents}*`,
+      s.firstAt ? `Birinchi hujjat: ${localDay(s.firstAt)}` : "",
+      "",
+      `Rasmi bor: *${s.photos}*`,
+      `Vizasi belgilangan: *${s.withVisa}*`,
+      `Pasporti ${s.months} oydan kam qolgan: *${s.expiringSoon}*`,
+    ];
+
+    if (s.byKind.length > 0) {
+      out.push("", "*Hujjat turlari*");
+      for (const kind of s.byKind.slice(0, 8)) {
+        out.push(`• ${esc(kind.label)} — ${kind.n}`);
+      }
+    }
+
+    out.push("", `*Xodimlar* (${s.operators} ta ro'yxatda)`);
+    if (s.perOperator.length === 0) {
+      out.push("_Hali hech kim hujjat o'qimagan._");
+    } else {
+      for (const worker of s.perOperator.slice(0, 15)) {
+        const me = worker.chatId === s.me ? " (siz)" : "";
+        const today = worker.today > 0 ? `, bugun ${worker.today}` : "";
+        out.push(`• \`${worker.chatId}\`${me} — ${worker.total} ta${today}`);
+      }
+    }
+
+    return out.filter((line) => line !== "").join("\n");
+  },
+
+  /** Statistika faqat egasiga. */
+  statsDenied: [
+    "Bu bo'lim faqat bot egasi uchun.",
+    "",
+    "O'z ishingizni ko'rish uchun: /profil",
+  ].join("\n"),
 
   // --- To'plam hisoboti ---
 

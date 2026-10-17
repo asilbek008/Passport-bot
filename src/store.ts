@@ -80,6 +80,32 @@ export type NewPilgrim = Omit<
  * `previousPhoto` — oldingi rasm yo'li: nomi yoki guruhi o'zgargan bo'lsa,
  * chaqiruvchi eski faylni o'chiradi (aks holda yetim fayl qolib ketardi).
  */
+/** Bitta xodimning ishi (`/profil`). */
+export type OperatorProfile = {
+  chatId: number;
+  total: number;
+  today: number;
+  month: number;
+  lastAt: string | null;
+  joinedAt: string | null;
+  usedToday: number;
+};
+
+/** Umumiy statistika (`/statistika`) — faqat sonlar. */
+export type BotStats = {
+  documents: number;
+  today: number;
+  week: number;
+  month: number;
+  photos: number;
+  withVisa: number;
+  expiringSoon: number;
+  firstAt: string | null;
+  operators: number;
+  byKind: { label: string; n: number }[];
+  perOperator: { chatId: number; total: number; today: number; lastAt: string | null }[];
+};
+
 export type SaveResult = {
   state: "inserted" | "updated";
   previousPhoto: string | null;
@@ -236,12 +262,148 @@ export class Store {
     return row?.n ?? 0;
   }
 
+  /**
+   * Eng birinchi ro'yxatga olingan xodim — odatda bot egasi.
+   *
+   * `.env` da SUPERADMIN ko'rsatilmagan bo'lsa, statistika shu odamga
+   * ko'rsatiladi: botni ishga tushirgan va birinchi kodni ishlatgan
+   * odam egasi bo'ladi.
+   */
+  firstOperator(): number | null {
+    const row = this.db
+      .prepare("select chat_id from operators order by added_at, chat_id limit 1")
+      .get() as { chat_id: number } | undefined;
+    return row?.chat_id ?? null;
+  }
+
   listOperators(): number[] {
     return (
       this.db
         .prepare("select chat_id from operators order by added_at")
         .all() as unknown as { chat_id: number }[]
     ).map((r) => r.chat_id);
+  }
+
+  // --- Profil va statistika ---
+
+  /**
+   * Bitta xodimning ishi.
+   *
+   * Sanalar bazada UTC da yoziladi, hisob esa O'ZBEKISTON kuni bo'yicha
+   * bo'lishi kerak (yarim kechada yangilanadi, UTC 05:00 da emas) —
+   * shuning uchun `+5 hours`.
+   */
+  profile(chatId: number): OperatorProfile {
+    const one = <T>(sql: string, ...args: unknown[]) =>
+      this.db.prepare(sql).get(...(args as never[])) as T | undefined;
+
+    const today = day();
+    const counts = one<{ total: number; today: number; month: number }>(
+      `select
+         count(*) as total,
+         sum(case when date(created_at, '+5 hours') = ? then 1 else 0 end) as today,
+         sum(case when date(created_at, '+5 hours') >= date(?, '-30 days') then 1 else 0 end) as month
+       from pilgrims where added_by = ?`,
+      today,
+      today,
+      chatId,
+    );
+    const last = one<{ at: string }>(
+      "select max(created_at) as at from pilgrims where added_by = ?",
+      chatId,
+    );
+    const joined = one<{ at: string }>(
+      "select added_at as at from operators where chat_id = ?",
+      chatId,
+    );
+    const attempts = one<{ count: number }>(
+      "select count from attempts where chat_id = ? and day = ?",
+      chatId,
+      today,
+    );
+
+    return {
+      chatId,
+      total: counts?.total ?? 0,
+      today: counts?.today ?? 0,
+      month: counts?.month ?? 0,
+      lastAt: last?.at ?? null,
+      joinedAt: joined?.at ?? null,
+      // Kunlik cheklovdan nechtasi ishlatilgan (rasm soni bo'yicha)
+      usedToday: attempts?.count ?? 0,
+    };
+  }
+
+  /**
+   * Umumiy statistika — superadmin uchun.
+   *
+   * Faqat SONLAR: ism, pasport raqami va boshqa hujjat ma'lumoti bu
+   * yerdan chiqmaydi.
+   */
+  stats(soonMonths = config.minPassportMonths): BotStats {
+    const today = day();
+    const all = <T>(sql: string, ...args: unknown[]) =>
+      this.db.prepare(sql).all(...(args as never[])) as unknown as T[];
+    const one = <T>(sql: string, ...args: unknown[]) =>
+      this.db.prepare(sql).get(...(args as never[])) as T | undefined;
+
+    const totals = one<{
+      documents: number;
+      today: number;
+      week: number;
+      month: number;
+      photos: number;
+      withVisa: number;
+      first: string | null;
+    }>(
+      `select
+         count(*) as documents,
+         sum(case when date(created_at, '+5 hours') = ? then 1 else 0 end) as today,
+         sum(case when date(created_at, '+5 hours') >= date(?, '-7 days') then 1 else 0 end) as week,
+         sum(case when date(created_at, '+5 hours') >= date(?, '-30 days') then 1 else 0 end) as month,
+         sum(case when photo_file is not null then 1 else 0 end) as photos,
+         sum(case when visa_type is not null or visa_number is not null then 1 else 0 end) as withVisa,
+         min(created_at) as first
+       from pilgrims`,
+      today,
+      today,
+      today,
+    );
+
+    const expiring = one<{ n: number }>(
+      `select count(*) as n from pilgrims
+       where expiry_date <> '' and expiry_date < date('now', '+' || ? || ' months')`,
+      soonMonths,
+    );
+
+    return {
+      documents: totals?.documents ?? 0,
+      today: totals?.today ?? 0,
+      week: totals?.week ?? 0,
+      month: totals?.month ?? 0,
+      photos: totals?.photos ?? 0,
+      withVisa: totals?.withVisa ?? 0,
+      expiringSoon: expiring?.n ?? 0,
+      firstAt: totals?.first ?? null,
+      operators: this.operatorCount(),
+      byKind: all<{ label: string; n: number }>(
+        `select case when doc_label = '' then 'Boshqa' else doc_label end as label,
+                count(*) as n
+         from pilgrims group by label order by n desc`,
+      ),
+      perOperator: all<{ chat_id: number; total: number; today: number; at: string }>(
+        `select added_by as chat_id, count(*) as total,
+                sum(case when date(created_at, '+5 hours') = ? then 1 else 0 end) as today,
+                max(created_at) as at
+         from pilgrims group by added_by order by total desc`,
+        today,
+      ).map((r) => ({
+        chatId: r.chat_id,
+        total: r.total,
+        today: r.today,
+        lastAt: r.at ?? null,
+      })),
+    };
   }
 
   // --- Cheklov ---

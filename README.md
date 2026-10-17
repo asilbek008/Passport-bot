@@ -214,6 +214,33 @@ O'qilmadi (2) — qaytadan suratga oling:
 28 ta rasm hujjatning o'ziga qirqildi.
 ```
 
+### Profil va statistika
+
+`/profil` — har bir xodim O'ZINING ishini ko'radi: bugun, oxirgi 30
+kunda va jami nechta hujjat o'qigani, ro'yxatga qachon olingani va
+kunlik rasm chegarasidan qanchasi ishlatilgani.
+
+`/statistika` — faqat **bot egasiga**: butun bot bo'yicha sonlar —
+bugun/hafta/oy/jami nechta hujjat, nechtasida rasm bor, nechtasiga viza
+belgilangan, pasporti tez tugaydiganlar, hujjat turlari bo'yicha
+taqsimot va **har bir xodim qancha hujjat o'qigani**.
+
+Ikkalasida ham faqat **sonlar**: mijozlarning ismi va pasport raqami bu
+bo'limlarda ko'rsatilmaydi.
+
+Egasi `.env` dagi `SUPERADMIN` bilan belgilanadi:
+
+```
+SUPERADMIN=123456789
+```
+
+(o'z raqamingizni qo'yasiz — uni `/profil` da ko'rasiz)
+
+Bo'sh qoldirilsa — **eng birinchi ro'yxatga olingan xodim** egasi
+hisoblanadi (odatda botni o'rnatgan odam), ya'ni sozlamaga tegmasa ham
+ishlaydi. Egasi `OPERATORS` ro'yxatida bo'lmasa ham botdan foydalana
+oladi: o'z botidan tashqarida qolib ketmasin.
+
 ### Barcha buyruqlar
 
 Buyruqlar Telegram menyusida ham turadi (`/` tugmasi). Birinchisi —
@@ -710,8 +737,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 329 test — bo'laklar alohida
-npm run sinov    # 41 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 334 test — bo'laklar alohida
+npm run sinov    # 45 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -730,7 +757,7 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan to'qqiz holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan o'n holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
@@ -739,8 +766,9 @@ kartaning old tomoni yuborilganda orqa tomonini olish aytilishi, orqa
 tomoni xira bo'lganda «teskari qiling» deyilmasligi, va kadrda kichik
 ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi, va
 ID kartaning ikkala tomoni birga yuborilganda bitta hujjat bo'lib,
-xatosiz chiqishi, va ochiq pasportda MRZ faqat tasma ko'rinishida
-o'qilishi.
+xatosiz chiqishi, ochiq pasportda MRZ faqat tasma ko'rinishida
+o'qilishi, va `/profil` bilan `/statistika` ishlashi (ichida mijoz
+ismi yo'qligi ham tekshiriladi).
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

@@ -29,3 +29,28 @@ const dayFormat = new Intl.DateTimeFormat("en-CA", {
 export function day(at: Date = new Date()): string {
   return dayFormat.format(at);
 }
+
+/**
+ * Bazadagi vaqtni odam o'qiydigan ko'rinishga keltiradi.
+ *
+ * SQLite `datetime('now')` ni UTC da yozadi ("2026-10-18 04:41:07"),
+ * xodim esa O'zbekiston vaqtini ko'rishi kerak — aks holda tunda
+ * yuborilgan hujjat "ertaga" bo'lib ko'rinadi.
+ */
+export function localDay(stored: string): string {
+  // "2026-10-18 04:41:07" → ishonchli sana obyekti (UTC deb o'qiladi)
+  const at = new Date(`${stored.trim().replace(" ", "T")}Z`);
+  if (Number.isNaN(at.getTime())) return stored;
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TIMEZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}.${get("month")}.${get("year")}, ${get("hour")}:${get("minute")}`;
+}

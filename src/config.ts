@@ -75,6 +75,23 @@ export const config = {
       .filter(Boolean);
   },
 
+  /**
+   * SUPERADMIN — bot egasi: umumiy statistikani ko'radi.
+   *
+   * Oddiy xodim faqat O'ZINING ishini ko'radi (`/profil`), egasi esa
+   * butun bot bo'yicha sonlarni (`/statistika`): kim qancha hujjat
+   * o'qigan, bugun nechta, qaysi turdagi hujjatlar va hokazo.
+   *
+   * Bir nechta bo'lsa vergul bilan. Bo'sh qoldirilsa — statistika
+   * hech kimga ko'rinmaydi (bot shundayam ishlaydi).
+   */
+  get superadmins(): string[] {
+    return (process.env.SUPERADMIN ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  },
+
   get dbPath(): string {
     return process.env.DB_PATH ?? "./data/umra.db";
   },
@@ -197,4 +214,14 @@ export const config = {
 
 export function isOperator(chatId: number | string): boolean {
   return config.operators.includes(String(chatId));
+}
+
+/**
+ * Bot egasimi (umumiy statistikani ko'radi).
+ *
+ * Superadmin avtomatik ravishda xodim ham hisoblanadi: egasi botdan
+ * foydalana olmay qolmasin deb (`OPERATORS` ga qo'shishni unutsa ham).
+ */
+export function isSuperadmin(chatId: number | string): boolean {
+  return config.superadmins.includes(String(chatId));
 }

@@ -607,6 +607,7 @@ async function withBot(mode, steps) {
         ANTHROPIC_API_KEY: "",
         PROVIDER: "gemini",
         OPERATORS: String(CHAT),
+        SUPERADMIN: String(CHAT),
         DB_PATH: join(work, "umra.db"),
         PHOTOS_DIR: join(work, "photos"),
         REQUESTS_PER_MINUTE: "120",
@@ -1116,6 +1117,54 @@ async function ochiqPasport() {
   });
 }
 
+// ───── 10. Profil va statistika ─────
+
+async function profilVaStatistika() {
+  console.log("\n10) /profil va /statistika");
+  await withBot("full", async (bot) => {
+    bot.photo(people[0], "albom-profil");
+    bot.photo(people[1], "albom-profil");
+    await bot.wait(
+      "to'plam tugmalari",
+      (c) => c.method === "sendMessage" && c.body.reply_markup?.inline_keyboard,
+    );
+
+    bot.text("/profil");
+    const profile = await bot.wait(
+      "/profil javobi",
+      (c) => c.method === "sendMessage" && /Profil/.test(c.body.text ?? ""),
+    );
+    const profileText = profile.body.text;
+    check(
+      "Profil o'z ishini ko'rsatadi",
+      /Jami: \*2\*/.test(profileText) && /chegarasi/.test(profileText),
+      profileText.split("\n").filter(Boolean).slice(2, 4).join(" / "),
+    );
+    check(
+      "Profilda mijoz ismi yo'q",
+      !/BOYQOBILOV|SALIMOVA/.test(profileText),
+      "faqat sonlar",
+    );
+
+    bot.text("/statistika");
+    const stats = await bot.wait(
+      "/statistika javobi",
+      (c) => c.method === "sendMessage" && /Statistika/.test(c.body.text ?? ""),
+    );
+    const statsText = stats.body.text;
+    check(
+      "Statistika butun bot bo'yicha sonlarni beradi",
+      /Jami: \*2\*/.test(statsText) && /Xodimlar/.test(statsText),
+      (statsText.match(/O'zbek pasporti — \d+/) ?? [""])[0],
+    );
+    check(
+      "Statistikada ham mijoz ismi yo'q",
+      !/BOYQOBILOV|SALIMOVA/.test(statsText),
+      "faqat sonlar",
+    );
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -1167,6 +1216,7 @@ try {
   await idKartaYaqindan();
   await idIkkiTomon();
   await ochiqPasport();
+  await profilVaStatistika();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

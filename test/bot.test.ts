@@ -1935,3 +1935,108 @@ test("yonboshlagan rasmda tasma olinmaydi — MRZ pastda bo'lmaydi", async () =>
   await processBatch(OPERATOR, ["f1"], deps as never);
   assert.ok(calls.f1 <= 3, `ortiqcha so'rov bo'lmasin: ${calls.f1}`);
 });
+
+// ───────────────────── Profil va statistika ─────────────────────
+//
+// Har xodim O'Z ishini ko'radi (/profil), bot egasi esa butun bot
+// bo'yicha sonlarni (/statistika). Ikkalasida ham faqat SONLAR:
+// mijozlarning ismi va pasport raqami chiqmaydi.
+
+test("/profil xodimning o'z ishini ko'rsatadi", async () => {
+  const mrz = td3({
+    surname: "PROFILOV", given: "AKMAL", docNumber: "AB3030303",
+    birth: "900101", sex: "M", expiry: "320101",
+  });
+  const { deps, sent, store } = makeDeps({ f1: okResult(mrz) });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await handleUpdate(textUpdate(OPERATOR, "/profil"), deps as never);
+
+  const text = sent.at(-1)!.text;
+  assert.match(text, /Profil/);
+  assert.match(text, new RegExp(String(OPERATOR)), "chat id ko'rsatilsin");
+  assert.match(text, /Jami: \*1\*/);
+  assert.match(text, /Bugun: \*1\*/);
+  assert.match(text, /chegarasi/, "kunlik chegara ham ko'rinsin");
+  assert.doesNotMatch(text, /PROFILOV/, "hujjat ma'lumoti chiqmasin");
+  store.close();
+});
+
+test("/statistika oddiy xodimga ko'rsatilmaydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/statistika"), deps as never);
+
+  const text = sent.at(-1)!.text;
+  assert.match(text, /faqat bot egasi/);
+  assert.match(text, /\/profil/, "o'rniga nima qilishni aytsin");
+  store.close();
+});
+
+test("/statistika egasiga butun bot bo'yicha sonlarni beradi", async () => {
+  const before = process.env.SUPERADMIN;
+  process.env.SUPERADMIN = String(OPERATOR);
+  try {
+    const first = td3({
+      surname: "BIRINCHI", given: "AZIZ", docNumber: "AB4040404",
+      birth: "900101", sex: "M", expiry: "320101",
+    });
+    const second = td3({
+      surname: "IKKINCHI", given: "DILNOZA", docNumber: "AB5050505",
+      birth: "920202", sex: "F", expiry: "330202",
+    });
+    const { deps, sent, store } = makeDeps({
+      f1: okResult(first),
+      f2: okResult(second),
+    });
+
+    await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+    await handleUpdate(textUpdate(OPERATOR, "/statistika"), deps as never);
+
+    const text = sent.map((m) => m.text).join("\n");
+    assert.match(text, /Statistika/);
+    assert.match(text, /Jami: \*2\*/);
+    assert.match(text, /Xodimlar/);
+    assert.match(text, new RegExp(`${OPERATOR}.*\\(siz\\)`), "o'zi belgilansin");
+    assert.match(text, /O'zbek pasporti — 2/, "hujjat turlari bo'yicha");
+    assert.doesNotMatch(text, /BIRINCHI|IKKINCHI/, "ism chiqmasin");
+    store.close();
+  } finally {
+    if (before === undefined) delete process.env.SUPERADMIN;
+    else process.env.SUPERADMIN = before;
+  }
+});
+
+test("egasi OPERATORS ro'yxatida bo'lmasa ham botdan foydalanadi", async () => {
+  const before = process.env.SUPERADMIN;
+  const owner = 7777777;
+  process.env.SUPERADMIN = String(owner);
+  try {
+    const { deps, sent, store } = makeDeps({});
+    await handleUpdate(textUpdate(owner, "/profil"), deps as never);
+    assert.match(sent.at(-1)!.text, /bot egasi/);
+    store.close();
+  } finally {
+    if (before === undefined) delete process.env.SUPERADMIN;
+    else process.env.SUPERADMIN = before;
+  }
+});
+
+test("SUPERADMIN ko'rsatilmasa, birinchi xodim egasi bo'ladi", async () => {
+  const before = process.env.SUPERADMIN;
+  delete process.env.SUPERADMIN;
+  try {
+    const { deps, sent, store } = makeDeps({});
+    // Birinchi ro'yxatga olingan — u egasi
+    store.addOperator(OPERATOR);
+    store.addOperator(222);
+
+    await handleUpdate(textUpdate(OPERATOR, "/statistika"), deps as never);
+    assert.match(sent.at(-1)!.text, /Statistika/);
+
+    await handleUpdate(textUpdate(222, "/statistika"), deps as never);
+    assert.match(sent.at(-1)!.text, /faqat bot egasi/, "ikkinchi xodim ko'rmaydi");
+    store.close();
+  } finally {
+    if (before !== undefined) process.env.SUPERADMIN = before;
+  }
+});

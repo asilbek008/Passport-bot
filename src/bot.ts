@@ -11,7 +11,7 @@
  */
 
 import { t, esc } from "./text.ts";
-import { config, isOperator } from "./config.ts";
+import { config, isOperator, isSuperadmin } from "./config.ts";
 import { day } from "./day.ts";
 import { monthsUntilExpiry, failedFields } from "./mrz.ts";
 import { splitMessage } from "./batch.ts";
@@ -64,8 +64,22 @@ export type Deps = {
  * Bu chat botdan foydalanishi mumkinmi.
  * Ikki manba: `.env` dagi `OPERATORS` va bazaga kod bilan qo'shilganlar.
  */
+/**
+ * Bot egasimi — statistikani ko'radimi.
+ *
+ * `.env` da SUPERADMIN bo'lsa, faqat o'sha. Bo'lmasa — eng birinchi
+ * ro'yxatga olingan xodim: botni o'rnatgan va birinchi kodni ishlatgan
+ * odam. Shu tufayli sozlamaga qo'l tekkizmasdan ham ishlaydi.
+ */
+function owner(chatId: number, store: Store): boolean {
+  if (config.superadmins.length > 0) return isSuperadmin(chatId);
+  return store.firstOperator() === chatId;
+}
+
 function allowed(chatId: number, store: Store): boolean {
-  return isOperator(chatId) || store.isOperator(chatId);
+  // Egasi har doim ichkarida: `OPERATORS` ga qo'shishni unutsa ham
+  // o'z botidan tashqarida qolmasin
+  return isSuperadmin(chatId) || isOperator(chatId) || store.isOperator(chatId);
 }
 
 /**
@@ -82,6 +96,7 @@ export const COMMANDS = [
   { command: "excel", description: "Hammasini Excel jadval qilib olish" },
   { command: "zip", description: "Hammasini rasmlar bilan arxiv qilib olish" },
   { command: "ogohlik", description: "Pasporti tez tugaydiganlar" },
+  { command: "profil", description: "Mening ishim: nechta hujjat o'qildi" },
   { command: "yordam", description: "Buyruqlar ro'yxati" },
 ];
 
@@ -414,6 +429,40 @@ async function handleCommand(
         return;
       }
       await sendWorkbook(chatId, rows, deps, now);
+      return;
+    }
+
+    // --- Profil va statistika ---
+
+    case "profil": {
+      const profile = store.profile(chatId);
+      await tg.sendMessage(
+        chatId,
+        t.profile({
+          ...profile,
+          limit: config.dailyLimit,
+          superadmin: owner(chatId, store),
+        }),
+      );
+      return;
+    }
+
+    case "statistika": {
+      // Butun bot bo'yicha sonlar faqat egasiga: oddiy xodim
+      // hamkasblarining ishini ko'rmasligi kerak
+      if (!owner(chatId, store)) {
+        await tg.sendMessage(chatId, t.statsDenied);
+        return;
+      }
+      await reply(
+        tg,
+        chatId,
+        t.stats({
+          ...store.stats(),
+          me: chatId,
+          months: config.minPassportMonths,
+        }),
+      );
       return;
     }
 
