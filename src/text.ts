@@ -112,6 +112,10 @@ export const t = {
       "Rasmlarni bittalab ham, bir necha o'nlabini birga (albom qilib)",
       "ham yuborishingiz mumkin.",
       "",
+      "*ID karta bo'lsa — ORQA tomonini oling.* Mashina o'qiydigan",
+      "qatorlar (MRZ) kartaning orqasida; old tomonida ular yo'q.",
+      "Pasportda esa surat bor sahifaning pastida.",
+      "",
       saved > 0 ? `_Bazada ${saved} ta pasport bor._\n` : "",
       "Buyruqlar: /yordam",
       "",
@@ -425,7 +429,20 @@ export const t = {
   },
 
   /** Sabablar — qisqa, chunki to'plam hisobotida bitta qatorga sig'ishi kerak. */
-  reasonUnreadable: "MRZ qatorlari o'qilmadi (xira yoki kesilgan)",
+  reasonUnreadable:
+    "MRZ qatorlari topilmadi — ID karta bo'lsa ORQA tomonini oling, " +
+    "pasportda esa surat bor sahifani (rasm xira yoki kesilgan bo'lishi ham mumkin)",
+  /**
+   * ID kartaning OLD tomoni yuborilgan.
+   *
+   * Alohida sabab, chunki yechimi butunlay boshqacha: rasmni yaxshilash
+   * emas, BOSHQA TOMONINI olish kerak. Avval bunday rasmga ham
+   * "xira yoki kesilgan" deyilardi va xodim shu tomonni qayta-qayta
+   * suratga olib yurardi — MRZ u yerda hech qachon bo'lmaydi.
+   */
+  reasonIdBack:
+    "ID kartaning old tomoni — MRZ kartaning ORQA tomonida, " +
+    "o'sha tomonini suratga oling",
   reasonNotDocument: "rasmda hujjat ko'rinmadi",
   reasonRefused: "rasmni o'qish rad etildi",
   reasonTechnical: "texnik xato",

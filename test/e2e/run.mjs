@@ -216,6 +216,36 @@ async function withBot(mode, steps) {
           403,
         );
       }
+      if (mode === "idfront") {
+        geminiHits.push("id_front");
+        return send({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      mrz_lines: [],
+                      issue_date: null,
+                      place_of_birth: null,
+                      authority: null,
+                      document_kind: "id_card",
+                      mrz_readable: false,
+                      problem: "old tomoni",
+                      visa_type: null,
+                      document_box: null,
+                      rotation: 0,
+                    }),
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 },
+        });
+      }
       let text = "{}";
       try {
         const body = JSON.parse(raw.toString("utf8"));
@@ -612,6 +642,30 @@ async function kalitXato() {
   });
 }
 
+// ─────────────── 4. ID kartaning old tomoni ───────────────
+
+async function idKartaOldTomoni() {
+  console.log("\n4) ID kartaning old tomoni yuborilsa — orqa tomonini aytadi");
+  await withBot("idfront", async (bot) => {
+    bot.photo(people[0], "albom-id");
+    await bot.wait(
+      "hisobot",
+      (c) => c.method === "editMessageText" && /O'qilmadi/.test(c.body.text ?? ""),
+    );
+    const report = bot.reports();
+    check(
+      "Xabar orqa tomonini olishni aytadi",
+      /ORQA tomonida/.test(report),
+      (report.match(/❌.*/) ?? [""])[0].slice(0, 90),
+    );
+    check(
+      "\"Xira yoki kesilgan\" deb chalg'itmaydi",
+      !/xira yoki kesilgan/.test(report),
+    );
+    check("Hech narsa saqlanmadi", !bot.calls.some((c) => c.method === "sendDocument"));
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -657,6 +711,7 @@ try {
   await asosiy();
   await burish();
   await kalitXato();
+  await idKartaOldTomoni();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

@@ -1597,3 +1597,20 @@ test("oddiy matn tugma deb qabul qilinmaydi", async () => {
   assert.match(sent.at(-1)!.text, /rasmini.*yuboring/is);
   store.close();
 });
+
+test("ID kartaning old tomoni yuborilsa — orqa tomonini olish aytiladi", async () => {
+  // Egasining holati: ID karta yuborildi va "MRZ o'qilmadi (xira yoki
+  // kesilgan)" chiqdi. Rasm xira emas edi — MRZ shunchaki kartaning
+  // boshqa tomonida. Xabar aynan shuni aytishi kerak.
+  const { deps, edits, store } = makeDeps({
+    f1: { ok: false, reason: "id_front", problem: "old tomoni" },
+  });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const report = edits.map((e) => e.text).join("\n");
+  assert.match(report, /ORQA tomonida/, "qaysi tomonini olish kerakligi aytilsin");
+  assert.doesNotMatch(report, /xira yoki kesilgan/, "noto'g'ri sabab aytilmasin");
+  assert.equal(store.count(), 0);
+  store.close();
+});

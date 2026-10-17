@@ -69,6 +69,11 @@ QAT'IY QOIDALAR:
    (pasportda 44, ID kartada 30 belgi).
 5. 0 va O, 1 va I ni diqqat bilan ajrat: MRZ da raqam va harf farq qiladi.
 6. Rasmda hujjat bo'lmasa — document_kind='not_a_document', mrz_lines=[].
+7. ID KARTANING OLD TOMONI (surat, ism, karta raqami ko'rinadi, lekin
+   pastida MRZ qatorlari YO'Q) bo'lsa: document_kind='id_card',
+   mrz_readable=false, mrz_lines=[] va problem='old tomoni'. MRZ ID
+   kartaning ORQA tomonida bo'ladi — uni old tomondan topishga urinma
+   va o'ylab topma.
 
 VIZA YORLIG'I: pasportga yopishtirilgan vizada ham MRZ bor (2 qator).
 Bunda document_kind='visa' va visa_type ni vizaning ko'rinadigan
@@ -123,7 +128,16 @@ export type ReadResult =
       /** Rasmni to'g'ri holatga keltirish uchun burish: 0 | 90 | 180 | 270 */
       rotation: Rotation;
     }
-  | { ok: false; reason: "unreadable" | "not_a_document" | "refused"; problem: string }
+  /**
+   * `id_front` — ID kartaning OLD tomoni yuborilgan: MRZ u yerda emas,
+   * kartaning orqasida. Alohida sabab, chunki yechimi boshqa: rasmni
+   * yaxshilash emas, kartani teskari qilib olish kerak.
+   */
+  | {
+      ok: false;
+      reason: "unreadable" | "not_a_document" | "refused" | "id_front";
+      problem: string;
+    }
   | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz }
   /**
    * API'ning o'zi ishlamadi: kalit xato, hisobda mablag' yo'q, tarmoq uzildi.
@@ -216,7 +230,10 @@ export function interpret(text: string, today: Date): ReadResult {
   if (!out.mrz_readable || out.mrz_lines.length === 0) {
     return {
       ok: false,
-      reason: "unreadable",
+      // ID kartada MRZ faqat ORQA tomonda bo'ladi. Shuning uchun
+      // "ID karta ko'rindi, lekin MRZ yo'q" degani deyarli har doim
+      // old tomoni yuborilgan degani — xodimga shu aytiladi.
+      reason: out.document_kind === "id_card" ? "id_front" : "unreadable",
       problem: out.problem ?? "MRZ qatorlari aniq ko'rinmadi.",
     };
   }

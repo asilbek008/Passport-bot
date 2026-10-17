@@ -1019,6 +1019,10 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
         return { kind: "failed", why: t.reasonChecks(failedFields(result.mrz)) };
       case "not_a_document":
         return { kind: "failed", why: t.reasonNotDocument };
+      // ID kartaning old tomoni — MRZ orqa tomonda. Yechimi rasmni
+      // yaxshilash emas, boshqa tomonini olish
+      case "id_front":
+        return { kind: "failed", why: t.reasonIdBack };
       case "refused":
         return { kind: "failed", why: t.reasonRefused };
       case "api_error":

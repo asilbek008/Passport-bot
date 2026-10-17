@@ -9,6 +9,7 @@ process.env.ANTHROPIC_API_KEY ??= "test";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseJson, normalizeDate } from "../src/vision.ts";
+import { interpret } from "../src/read-shared.ts";
 
 const good = {
   mrz_lines: ["P<UZB...", "AB..."],
@@ -75,4 +76,56 @@ test("normalizeDate faqat haqiqiy ISO sanani o'tkazadi", () => {
   assert.equal(normalizeDate("2020-02-30"), null); // mavjud bo'lmagan kun
   assert.equal(normalizeDate("2020-13-01"), null); // 13-oy
   assert.equal(normalizeDate("taxminan 2020"), null);
+});
+
+// --- ID kartaning old tomoni ---
+//
+// ID kartada MRZ faqat ORQA tomonda. Old tomoni yuborilsa, "xira yoki
+// kesilgan" deb aytish xodimni shu tomonni qayta-qayta suratga olishga
+// majbur qilardi — shuning uchun bu alohida sabab.
+
+test("ID karta ko'rinib MRZ yo'q bo'lsa — old tomoni deb aytiladi", () => {
+  const r = interpret(
+    JSON.stringify({
+      ...good,
+      document_kind: "id_card",
+      mrz_readable: false,
+      mrz_lines: [],
+      problem: "old tomoni",
+    }),
+    new Date("2026-10-17T00:00:00Z"),
+  );
+  assert.equal(r.ok, false);
+  assert.equal(r.ok === false && r.reason, "id_front");
+});
+
+test("pasportda MRZ o'qilmasa — sabab oddiy 'unreadable' qoladi", () => {
+  // Pasportda MRZ surat bor sahifada: boshqa tomonini olish yechim emas,
+  // shuning uchun bu yerda ID karta maslahati berilmasligi kerak
+  const r = interpret(
+    JSON.stringify({ ...good, mrz_readable: false, mrz_lines: [] }),
+    new Date("2026-10-17T00:00:00Z"),
+  );
+  assert.equal(r.ok === false && r.reason, "unreadable");
+});
+
+test("ID kartaning ORQA tomoni (TD1) odatdagidek o'qiladi", () => {
+  // Haqiqiy TD1 — ICAO 9303 namunasi, tekshiruv raqamlari bilan
+  const lines = [
+    "I<UTOD231458907<<<<<<<<<<<<<<<",
+    "7408122F1204159UTO<<<<<<<<<<<6",
+    "ERIKSSON<<ANNA<MARIA<<<<<<<<<<",
+  ];
+  const r = interpret(
+    JSON.stringify({
+      ...good,
+      document_kind: "id_card",
+      mrz_readable: true,
+      mrz_lines: lines,
+    }),
+    new Date("2011-01-01T00:00:00Z"),
+  );
+  assert.equal(r.ok, true, "orqa tomon o'qilishi kerak");
+  assert.equal(r.ok === true && r.mrz.format, "TD1");
+  assert.equal(r.ok === true && r.mrz.surname, "ERIKSSON");
 });

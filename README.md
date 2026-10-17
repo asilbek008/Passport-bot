@@ -334,6 +334,18 @@ rasmga tegilmaydi.
 
 Butunlay o'chirish: `.env` da `CROP=off`.
 
+### Qaysi tomonini suratga olish kerak
+
+| Hujjat | Qaysi tomoni | Nega |
+|---|---|---|
+| Pasport (qizil) | Surat bor **ma'lumot sahifasi** | MRZ shu sahifaning pastida, 2 qator |
+| ID karta | **ORQA** tomoni | MRZ kartaning orqasida, 3 qator. Old tomonida (surat, ism, karta raqami) MRZ **yo'q** |
+
+ID kartaning old tomoni yuborilsa, bot uni tanib: «ID kartaning old
+tomoni — MRZ kartaning ORQA tomonida, o'sha tomonini suratga oling»
+deydi. Avval bunday rasmga «MRZ o'qilmadi (xira yoki kesilgan)» deb
+javob berardi va xodim shu tomonni qayta-qayta suratga olib yurardi.
+
 ### Yaxshi rasm uchun
 
 - yorug' joyda, soyasiz
@@ -607,8 +619,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 289 test — bo'laklar alohida
-npm run sinov    # 21 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 293 test — bo'laklar alohida
+npm run sinov    # 24 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -627,10 +639,11 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan uchta holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan to'rt holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
-rasm to'g'rilanishi, va API kaliti xato bo'lganda xodimga tushunarli xabar
-chiqishi.
+rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
+chiqishi, va ID kartaning old tomoni yuborilganda orqa tomonini olish
+aytilishi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta
