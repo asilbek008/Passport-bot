@@ -241,14 +241,25 @@ tugmasi qilib ko'rsatadi.
 
 ### Excel faylda nima bo'ladi
 
+Faqat ikkita ustun: **Familiya** va **Ism**. Jadval konsullikka ro'yxat
+topshirish uchun kerak, qolgani ortiqcha.
+
+Pasport muddati haqidagi ogohlantirish jadvalda emas — u to'plam
+hisobotida va `/ogohlik` da chiqadi. Ma'lumotning o'zi (pasport raqami,
+sana, viza) bazada turadi; ustun kerak bo'lsa qaytariladi.
+
+<details>
+<summary>Eski ko'rinish (22 ustun)</summary>
+
 **Familiya**, **Ism**, **Hujjat turi**, **Davlat**, Jinsi, Tug'ilgan
 sana, Fuqaroligi, Kod, Pasport raqami, Berilgan sana, Amal muddati,
 **Qolgan (oy)**, **Viza**, **Viza raqami**, **Viza muddati**, **Viza manbasi**,
 JSHSHIR, Tug'ilgan joy, Kim bergan, Qabul qilingan vaqt, Izoh.
 
 **Qizil qator** — pasport muddati tugagan. **Sariq qator** — `MIN_PASSPORT_MONTHS`
-(standart 6) oydan kam qolgan. Shunda faylni ochishingiz bilan kimga
-qo'ng'iroq qilish kerakligini ko'rasiz, 50 qatorni ko'zdan kechirmasdan.
+(standart 6) oydan kam qolgan.
+
+</details>
 
 ### Zip arxivda nima bo'ladi
 
