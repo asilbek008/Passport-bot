@@ -681,7 +681,8 @@ test/
   *.test.ts     bo'laklarning testlari (`npm test`)
   e2e/run.mjs   `npm run sinov` — botning o'zini ishga tushirib tekshirish
 windows/
-  1-ornatish.bat    o'rnatish (ikki marta bosiladi)
+  1-ornatish.bat    o'rnatish (ikki marta bosiladi); papka eski nusxaning
+                    ichiga olingan bo'lsa, .env va data'ni o'zi ko'chiradi
   2-boshlash.bat    ishga tushirish, o'zi qayta ko'tariladi
   3-avtomatik.bat   kompyuterga kirganda avtomatik ishga tushirish
   4-zaxira.bat      zaxira olish

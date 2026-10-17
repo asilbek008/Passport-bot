@@ -23,6 +23,34 @@ if errorlevel 1 goto xato_npm
 
 echo.
 if exist ".env" goto env_bor
+
+REM Papka ESKI nusxaning ichiga olingan bo'lishi mumkin (masalan
+REM `git clone` eski papka ichida bajarilgan). Unda sozlamalar va baza
+REM bir qavat yuqorida qoladi va bot ularni ko'rmaydi. Shuni o'zimiz
+REM topib ko'chiramiz - xodim fayl ko'chirib yurmasin.
+if not exist "..\.env" goto sozlash
+echo --------------------------------------------
+echo   Yuqoridagi papkada tayyor sozlamalar topildi
+echo --------------------------------------------
+echo.
+echo   %~dp0..\..\.env
+echo.
+echo Shu yerga ko'chiramizmi? (eski joyida ham qoladi)
+echo.
+set KOCHIR=
+set /p KOCHIR=Ha uchun 1, yo'q uchun 2 yozing:
+if not "%KOCHIR%"=="1" goto sozlash
+copy /y "..\.env" ".env" >nul
+echo Sozlamalar ko'chirildi.
+if exist "..\data" if not exist "data" (
+  echo Baza va rasmlar ko'chirilmoqda...
+  xcopy "..\data" "data\" /e /i /q /y >nul
+  echo Ko'chirildi: data
+)
+echo.
+goto tekshirish
+
+:sozlash
 echo Endi sozlamalarni to'ldiramiz.
 echo Bot tokeni va API kaliti so'raladi.
 echo.
