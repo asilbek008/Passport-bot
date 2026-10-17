@@ -31,6 +31,8 @@ import { dirname, join, resolve } from "node:path";
 import jpeg from "jpeg-js";
 import { checkDigit, parseMrz } from "../../src/mrz.ts";
 
+const decodeJpeg = (bytes) => jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true });
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const CHAT = 555001;
@@ -63,6 +65,66 @@ function passportImage(width, height) {
   return {
     bytes: new Uint8Array(jpeg.encode({ data, width, height }, 92).data),
     box: [133, 125, 867, 875], // [y0,x0,y1,x1], 0..1000
+    width,
+    height,
+  };
+}
+
+/**
+ * QO'LDA USHLANGAN, uzoqdan olingan pasport rasmi.
+ *
+ * Hujjat kadrda qiyshiq (trapetsiya) va kadrning kichik qismida;
+ * pastda barmoq ham bor. Yuqori chetida oq tasma, pastida qora tasma
+ * (= MRZ) — natijaning to'g'ri tomoni yuqoridami, shundan bilinadi.
+ */
+function heldImage(width, height) {
+  // Burchaklar: chap-yuqori, o'ng-yuqori, o'ng-past, chap-past (0–1000)
+  const quad = [
+    [300, 240],
+    [330, 700],
+    [640, 760],
+    [620, 180],
+  ];
+  const px = quad.map(([y, x]) => ({ x: (x / 1000) * width, y: (y / 1000) * height }));
+  const inside = (x, y) => {
+    for (let i = 0; i < 4; i++) {
+      const a = px[i];
+      const b = px[(i + 1) % 4];
+      if ((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x) < 0) return false;
+    }
+    return true;
+  };
+  const top = (px[0].y + px[1].y) / 2;
+  const bottom = (px[2].y + px[3].y) / 2;
+
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      let color;
+      if (inside(x + 0.5, y + 0.5)) {
+        const depth = (y + 0.5 - top) / (bottom - top);
+        color = depth < 0.15 ? [250, 250, 250] : depth > 0.85 ? [20, 20, 20] : [225, 215, 195];
+      } else if (
+        // Barmoq: hujjatning past-chap chetida
+        x > width * 0.2 &&
+        x < width * 0.3 &&
+        y > height * 0.55 &&
+        y < height * 0.72
+      ) {
+        color = [190, 140, 110];
+      } else {
+        color = [72, 74, 78]; // stol
+      }
+      data[i] = color[0];
+      data[i + 1] = color[1];
+      data[i + 2] = color[2];
+      data[i + 3] = 255;
+    }
+  }
+  return {
+    bytes: new Uint8Array(jpeg.encode({ data, width, height }, 92).data),
+    quad,
     width,
     height,
   };
@@ -130,6 +192,23 @@ for (const p of people) {
     process.exit(1);
   }
 }
+
+// Qo'lda ushlab, naridan olingan rasm — eng ko'p uchraydigan holat
+const held = {
+  file_id: "sinov-rasm-qol",
+  image: heldImage(1400, 1050),
+  mrz: td3({
+    surname: "QOLBOYEV",
+    given: "BEKZOD",
+    docNum: "FA5550001",
+    nat: "UZB",
+    birth: "880303",
+    sex: "M",
+    expiry: "320505",
+  }),
+  file: "bekzod_qolboyev_qizil.jpg",
+};
+people.push(held);
 
 const byLength = new Map(people.map((p) => [p.image.bytes.length, p]));
 const byFileId = new Map(people.map((p) => [p.file_id, p]));
@@ -262,7 +341,8 @@ async function withBot(mode, steps) {
           mrz_readable: true,
           problem: null,
           visa_type: null,
-          document_box: person.image.box,
+          document_box: person.image.box ?? null,
+          document_quad: person.image.quad ?? null,
           rotation: mode === "rotate" ? 90 : 0,
         });
       } catch (err) {
@@ -518,7 +598,7 @@ async function asosiy() {
     const names = zipNames(archive);
     check(
       "🗂 tugmasi arxiv berdi, nomlari ism_familiya_turi.jpg",
-      people.every((p) => names.some((n) => n.endsWith(p.file))),
+      [people[0], people[1]].every((p) => names.some((n) => n.endsWith(p.file))),
       names.map((n) => n.split("/").pop()).join(", "),
     );
     check("Arxiv ichida Excel ham bor", names.some((n) => n.endsWith(".xlsx")));
@@ -642,10 +722,77 @@ async function kalitXato() {
   });
 }
 
-// ─────────────── 4. ID kartaning old tomoni ───────────────
+// ─────────── 4. Qo'lda ushlangan, qiyshiq, uzoqdan olingan rasm ───────────
+
+async function qoldaUshlangan() {
+  console.log("\n4) Qo'lda ushlangan qiyshiq pasport — arxivda faqat hujjat qoladi");
+  await withBot("full", async (bot) => {
+    bot.photo(held, "albom-qol");
+    const picked = await bot.wait(
+      "to'plam tugmalari",
+      (c) => c.method === "sendMessage" && c.body.reply_markup?.inline_keyboard,
+    );
+    check(
+      "Hisobotda tekis holatga keltirilgani aytildi",
+      /tekis holatga/.test(bot.reports()),
+      (bot.reports().match(/_.*qirqildi.*_/) ?? [""])[0].slice(0, 80),
+    );
+
+    const id = picked.body.reply_markup.inline_keyboard[0][0].callback_data.split(":")[1];
+    bot.button(`zip:${id}`);
+    const zip = await bot.wait(
+      "zip arxivi",
+      (c) => c.method === "sendDocument" && c.body.name.endsWith(".zip"),
+    );
+
+    const photo = zipEntry(bot.file(zip.body.name), held.file);
+    const img = decodeJpeg(photo);
+
+    // 1) Stol va qo'l chiqib ketdi: to'q kulrang piksel deyarli qolmasin
+    let table = 0;
+    for (let i = 0; i < img.data.length; i += 4) {
+      const [r, g, b] = [img.data[i], img.data[i + 1], img.data[i + 2]];
+      const isTable = Math.abs(r - 72) < 28 && Math.abs(g - 74) < 28 && Math.abs(b - 78) < 28;
+      // MRZ tasmasi ham to'q — faqat yuqori 80 foizni hisoblaymiz
+      if (isTable && Math.floor(i / 4 / img.width) < img.height * 0.8) table++;
+    }
+    const tableShare = table / (img.width * img.height);
+    // Chetda ingichka tasma ataylab qoldiriladi (hujjat o'lchamining 2%):
+    // pasportning qirrasi kesilib ketmasligi uchun. Qo'l va stolning
+    // qolgani — kadrning yarmi emas, shu tasma
+    check(
+      "Arxivdagi rasmda stol va qo'l qolmadi",
+      tableShare < 0.09,
+      `stol ulushi ${(tableShare * 100).toFixed(1)}% (chetdagi 2% tasma)`,
+    );
+
+    // 2) Hujjat to'g'ri tomoni bilan: oq tasma yuqorida, MRZ pastda
+    const rowLevel = (share) => {
+      const row = Math.round(img.height * share);
+      let sum = 0;
+      for (let x = 0; x < img.width; x++) sum += img.data[(row * img.width + x) * 4 + 1];
+      return sum / img.width;
+    };
+    check(
+      "Hujjat to'g'ri tomoni bilan (MRZ pastda)",
+      rowLevel(0.05) > 170 && rowLevel(0.95) < 100,
+      `yuqori ${Math.round(rowLevel(0.05))}, past ${Math.round(rowLevel(0.95))}`,
+    );
+
+    // 3) Tomonlar nisbati hujjatga o'xshash
+    const ratio = img.width / img.height;
+    check(
+      "Tekis to'rtburchak bo'lib chiqdi",
+      ratio > 1.05 && ratio < 2.6,
+      `${img.width}×${img.height}, nisbat ${ratio.toFixed(2)}`,
+    );
+  });
+}
+
+// ─────────────── 5. ID kartaning old tomoni ───────────────
 
 async function idKartaOldTomoni() {
-  console.log("\n4) ID kartaning old tomoni yuborilsa — orqa tomonini aytadi");
+  console.log("\n5) ID kartaning old tomoni yuborilsa — orqa tomonini aytadi");
   await withBot("idfront", async (bot) => {
     bot.photo(people[0], "albom-id");
     await bot.wait(
@@ -711,6 +858,7 @@ try {
   await asosiy();
   await burish();
   await kalitXato();
+  await qoldaUshlangan();
   await idKartaOldTomoni();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);

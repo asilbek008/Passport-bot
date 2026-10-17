@@ -13,7 +13,14 @@
 
 import { z } from "zod";
 import { parseMrz, MrzError, type Mrz } from "./mrz.ts";
-import { parseBox, parseRotation, type Box, type Rotation } from "./crop.ts";
+import {
+  parseBox,
+  parseQuad,
+  parseRotation,
+  type Box,
+  type Quad,
+  type Rotation,
+} from "./crop.ts";
 import type { VisaType } from "./visa.ts";
 
 export const ReadSchema = z.object({
@@ -44,6 +51,17 @@ export const ReadSchema = z.object({
    * holida saqlanadi. MRZ o'qishga hech qanday ta'siri yo'q.
    */
   document_box: z.array(z.number()).nullable().optional(),
+  /**
+   * Hujjatning TO'RT BURCHAGI: `[[y,x],[y,x],[y,x],[y,x]]`, 0–1000.
+   *
+   * Tartib — hujjatning O'ZIGA nisbatan: chap-yuqori, o'ng-yuqori,
+   * o'ng-past, chap-past. Qo'lda ushlangan pasport kadrda trapetsiya
+   * bo'lib ko'rinadi; shu to'rt nuqta bo'yicha rasm skanerdek tekis
+   * to'rtburchakka to'g'rilanadi (`crop.ts` `warpQuad`).
+   *
+   * Ixtiyoriy va ishonchsiz: shubha bo'lsa `document_box` ishlatiladi.
+   */
+  document_quad: z.array(z.array(z.number())).nullable().optional(),
   /**
    * Hujjat kadrda qanchaga burilgan: 0, 90, 180 yoki 270 daraja.
    *
@@ -101,6 +119,24 @@ qirqiladi, shuning uchun:
   • chegarani aniq ko'rsatolmasang document_box=null qoldir. Yarmi
     kesilgan rasm qirqilmagan rasmdan yomonroq.
 
+document_quad — hujjatning TO'RT BURCHAGI, eng muhim maydon:
+[[y,x],[y,x],[y,x],[y,x]], har biri 0 dan 1000 gacha. Tartib hujjatning
+O'ZIGA nisbatan: chap-yuqori, o'ng-yuqori, o'ng-past, chap-past —
+ya'ni hujjatdagi YOZUV to'g'ri o'qiladigan holatdagi burchaklar.
+  • Xodim pasportni ko'pincha QO'LIDA ushlab, naridan suratga oladi:
+    kadrda hujjat to'rtburchak emas, trapetsiya bo'lib ko'rinadi. Shu
+    to'rt nuqta bo'yicha rasm tekis to'rtburchakka to'g'rilanadi va
+    arxivda faqat hujjatning o'zi qoladi — qo'l va stol chiqib ketadi;
+  • barmoq hujjatning burchagini to'sib turgan bo'lsa, o'sha burchakni
+    hujjat QIRRALARI bo'yicha hisoblab ko'rsat: hujjat to'g'ri
+    to'rtburchak, demak bu geometriya, taxmin emas;
+  • hujjatning qirrasi kadrdan chiqib ketgan bo'lsa (to'liq
+    ko'rinmasa) — document_quad=null;
+  • hujjatdagi SURATNING yoki MRZ ning burchaklarini emas, hujjatning
+    o'zini ko'rsat;
+  • burchaklarni aniq ayta olmasang document_quad=null qoldir va
+    document_box ni ber. Yarmi kesilgan rasm qirqilmagan rasmdan yomonroq.
+
 rotation — hujjat kadrda qanchaga burilgan, SOAT YO'NALISHIDA to'g'rilash
 uchun kerakli daraja: 0, 90, 180 yoki 270. Ya'ni hujjatning yozuvlari
 to'g'ri o'qilishi uchun rasmni soat yo'nalishida necha daraja burish
@@ -110,7 +146,7 @@ JAVOB SHAKLI: faqat JSON obyekt, boshqa hech qanday matn yoki izohsiz:
 {"mrz_lines":["...","..."],"issue_date":null,"place_of_birth":null,
 "authority":null,"document_kind":"passport","mrz_readable":true,
 "problem":null,"visa_type":null,"document_box":[120,80,890,960],
-"rotation":0}`;
+"document_quad":[[130,95],[118,955],[885,962],[892,82]],"rotation":0}`;
 
 export const USER_PROMPT = "Bu hujjatning MRZ qatorlarini ko'chirib yoz.";
 
@@ -125,6 +161,11 @@ export type ReadResult =
       visaType: VisaType | null;
       /** Hujjatning kadrdagi chegarasi — rasmni qirqish uchun; yo'q bo'lsa null */
       box: Box | null;
+      /**
+       * Hujjatning to'rt burchagi — qo'lda ushlangan qiyshiq rasmni
+       * skanerdek tekis qilish uchun; ishonchsiz bo'lsa null
+       */
+      quad: Quad | null;
       /** Rasmni to'g'ri holatga keltirish uchun burish: 0 | 90 | 180 | 270 */
       rotation: Rotation;
     }
@@ -265,6 +306,7 @@ export function interpret(text: string, today: Date): ReadResult {
     authority: out.authority?.trim() || null,
     visaType: out.visa_type ?? null,
     box: parseBox(out.document_box),
+    quad: parseQuad(out.document_quad),
     rotation: parseRotation(out.rotation),
   };
 }

@@ -366,8 +366,14 @@ export const t = {
     files?: boolean;
     /** Nechta rasm hujjatning o'ziga qirqildi */
     cropped?: number;
+    /** Nechta rasmning perspektivasi to'g'rilandi (skanerdek tekis bo'ldi) */
+    flattened?: number;
     /** Nechta rasm to'g'ri holatga burildi */
     turned?: number;
+    /** Qirqilgan, lekin hujjat baribir kichik qolgan rasmlar soni */
+    lowRes?: number;
+    /** Qirqilmagan rasmlarning raqami — xodim ularni qo'lda qirqadi */
+    notCropped?: number[];
     /** Nechta rasm diskka saqlanmadi */
     photoProblems?: number;
   }) => {
@@ -412,17 +418,40 @@ export const t = {
 
     if (parts.files) {
       const cropped = parts.cropped ?? 0;
+      const flattened = parts.flattened ?? 0;
       const turned = parts.turned ?? 0;
+      const lowRes = parts.lowRes ?? 0;
+      const notCropped = parts.notCropped ?? [];
       // Rasmga nima qilinganini aytamiz: xodim arxivni ochganda
       // rasm o'zgarganini ko'rib hayron bo'lmasin
       const done = [
         cropped > 0 ? `${cropped} ta rasm hujjatning o'ziga qirqildi` : "",
+        flattened > 0 ? `${flattened} tasi tekis holatga keltirildi` : "",
         turned > 0 ? `${turned} tasi to'g'ri holatga burildi` : "",
       ].filter(Boolean);
       out.push(
         "",
         done.length > 0 ? `_${done.join(", ")}._` : "",
       );
+
+      // Qirqilmagan rasm arxivda stol va qo'l bilan qoladi. Buni
+      // aytmasak, xodim arxivni konsullikka o'sha holda yuboradi
+      if (notCropped.length > 0) {
+        out.push(
+          `⚠️ ${notCropped.length} ta rasm qirqilmadi (${notCropped.join(", ")}-rasm) — ` +
+            "arxivda asl holida. Hujjat kadrda to'liq va tekis ko'rinsa, " +
+            "qayta yuborib ko'ring.",
+        );
+      }
+
+      // Uzoqdan olingan rasm: qirqildi, lekin hujjat juda kichik —
+      // bunday rasmdan MRZ ni odam o'qiy olmaydi
+      if (lowRes > 0) {
+        out.push(
+          `⚠️ ${lowRes} ta rasmda hujjat kadrda juda kichik — yaqinroq turib, ` +
+            "hujjat kadrni to'ldiradigan qilib oling (arxivdagi rasm past sifatda).",
+        );
+      }
     }
 
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();

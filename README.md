@@ -298,39 +298,70 @@ chegarasi 50 MB. Bunda `/tozalash` yoki `/ochir` bilan keraksiz yozuvlarni
 olib tashlang (to'plamdan keyin keladigan arxivda esa faqat o'sha
 to'plamdagi pasportlar bo'ladi — u kichik).
 
-### Rasm hujjatning o'ziga qirqiladi
+### Rasmdan hujjatning O'ZI ajratib olinadi
 
-Xodim pasportni stol ustida suratga oladi — kadrda stol, qo'l, boshqa
-qog'ozlar ham tushadi. Arxivga esa pasportning **o'zi** kerak. Shuning
-uchun bot rasmni hujjat chegarasi bo'yicha qirqadi:
+Xodim pasportni ko'pincha **qo'lida ushlab**, bir-ikki qadam naridan
+suratga oladi: kadrda stol, qo'l, devor tushadi; pasportning o'zi esa
+qiyshiq va kadrning kichik qismida bo'ladi. Konsullikka va viza
+arizasiga esa pasportning **o'zi** — to'liq, tekis va chetlarisiz —
+kerak. Bot shuni o'zi qiladi (`src/crop.ts`, `jpeg-js` bilan; modeldan
+faqat **raqam** keladi, rasmni model o'zgartirmaydi).
 
-1. model MRZ ni o'qiyotganda hujjatning chegarasini ham aytadi
-   (`document_box`, 0–1000 oralig'ida — rasm o'lchamidan qat'i nazar);
-2. qirqishning o'zini kod bajaradi (`src/crop.ts`, `jpeg-js` bilan) —
-   modeldan faqat **raqam** keladi, rasmni u o'zgartirmaydi;
-3. chetiga `CROP_MARGIN_PCT` (standart 2%) bo'sh joy qo'shiladi, shunda
-   pasportning qirrasi kesilmaydi.
+**1-usul: perspektiva to'g'rilash (asosiy).** Model hujjatning to'rt
+burchagini aytadi (`document_quad` — hujjatning o'z tartibida:
+chap-yuqori, o'ng-yuqori, o'ng-past, chap-past). Qo'lda ushlangan
+pasport kadrda to'rtburchak emas, trapetsiya bo'lib ko'rinadi; shu
+to'rt nuqta bo'yicha proyektiv almashtirish hisoblanadi va rasm
+**skanerdan o'tgandek** tekis to'rtburchakka yoziladi. Qiyshiqligi ham,
+burilishi ham bir yo'la to'g'rilanadi, qo'l va stol esa to'rtburchakdan
+tashqarida qolib, butunlay chiqib ketadi.
 
-**Eng muhim qoida: shubha bo'lsa qirqilmaydi.** Yarmi kesilgan pasport
-butun kadrdan yomonroq — ma'lumot yo'qoladi va xodim buni sezmasligi
-ham mumkin. Shuning uchun chegara rad etiladi va rasm asl holida
-saqlanadi, agar u:
+**2-usul: to'rtburchak chegara.** Burchaklar ishonchsiz bo'lsa,
+`document_box` bo'yicha qirqiladi. Chegara **piksellar bo'yicha
+aniqlashtiriladi**: model hujjatning bir chetini kesib qo'ygan bo'lsa,
+haqiqiy chetigacha kengaytiriladi; stolni ham qo'shib yuborgan bo'lsa,
+toraytiriladi. Solishtirish **rang** bo'yicha, kulranglik bo'yicha emas:
+qizil pasport to'q stol ustida kulrangga aylantirilsa deyarli bir xil
+chiqadi (87 va 72), rang farqi esa aniq ko'rinadi.
 
-- kadrning 25% kengligi / 15% balandligidan kichik bo'lsa (model odatda
-  shunda hujjat o'rniga undagi **suratni** ko'rsatadi);
-- teskari yoki kadrdan chiqib ketgan bo'lsa;
-- deyarli butun kadr bo'lsa (qirqishdan ma'no yo'q);
-- natija 200 pikseldan kichik bo'lsa (MRZ o'qilmay qoladi).
+**3-usul: hech narsa.** Ikkisi ham ishonchsiz bo'lsa, rasm asl holida
+saqlanadi va hisobotda "qirqilmadi" deb aytiladi — xodim uni qo'lda
+qirqadi yoki qayta suratga oladi.
 
-JPEG bo'lmagan rasm ham qirqilmaydi (`jpeg-js` faqat JPEG biladi;
-Telegram oddiy rasmni JPEG qilib beradi, shuning uchun bu kamdan-kam).
+**Eng muhim qoida: hujjat hech qachon kesilmaydi.** Yarmi kesilgan
+pasport butun kadrdan yomonroq — ma'lumot yo'qoladi va xodim buni
+sezmasligi ham mumkin. Shuning uchun qirqilmaydi, agar:
 
-**Yonboshlagan rasm ham to'g'rilanadi.** Model hujjatning burilishini ham
-aytadi (`rotation`: 0, 90, 180 yoki 270) va rasm to'g'ri holatga buriladi —
-konsullikka yonboshlagan pasport yuklashga to'g'ri kelmaydi. Burish va
-qirqish **birga** bajariladi, shuning uchun rasm bir marta qayta siqiladi.
-Bu yerda ham xuddi shu qoida: model holatni aniq aytmasa (masalan 45°),
-rasmga tegilmaydi.
+- hujjatning cheti **topilmasa** — ya'ni chegarani kengaytirganda hujjat
+  davom etaverса (model hujjat o'rniga undagi **suratni** ko'rsatganda
+  shunday bo'ladi);
+- shakli hujjatga o'xshamasa (masalan faqat MRZ tasmasi — keng va past);
+- burchaklar teskari tartibda bo'lsa (natija ko'zgudagidek chiqardi);
+- natija 200 pikseldan kichik bo'lsa (MRZ o'qilmay qoladi);
+- hujjat kadrning 8 foizidan kichik bo'lib, aytilgan joyda piksellar
+  hech qanday chegara ko'rsatmasa (ikki dalil qoidasi).
+
+Bu kafolat **60 ta tasodifiy holatda** tekshiriladi (`npm test`): hujjat
+kadrning turli joyida va o'lchamida, model chegarasi esa ±12% xato
+qilgan holda — har safar hujjatning hamma pikseli natijada qolishi shart.
+
+**Uzoqdan olingan rasm.** Avval hujjat kadrning 8 foizidan kichik
+bo'lsa umuman qirqilmasdi — aynan eng kerakli holat chetda qolardi.
+Endi qirqiladi, lekin hujjat baribir kichik bo'lsa (uzun tomoni 700
+pikseldan kam) xodimga **"yaqinroq turib oling"** deb aytiladi: bunday
+rasmdan MRZ ni na konsullik xodimi, na model o'qiydi.
+
+**Yonboshlagan rasm.** Perspektiva usulida burchaklar tartibining o'zi
+holatni hal qiladi. To'rtburchak usulida model `rotation` ni aytadi
+(0, 90, 180, 270) va rasm to'g'ri holatga buriladi. Burish va qirqish
+**birga** bajariladi — rasm bir marta qayta siqiladi.
+
+Chetiga `CROP_MARGIN_PCT` (standart 2%) bo'sh joy qo'shiladi — **hujjat
+o'lchamiga nisbatan**, kadrga emas: uzoqdan olingan rasmda kadrning 2
+foizi hujjatning chorakiga teng bo'lib ketardi.
+
+JPEG bo'lmagan rasm qirqilmaydi (`jpeg-js` faqat JPEG biladi; Telegram
+oddiy rasmni JPEG qilib beradi, shuning uchun bu kamdan-kam).
 
 Butunlay o'chirish: `.env` da `CROP=off`.
 
@@ -586,7 +617,8 @@ src/
   zip.ts        ZIP arxiv tuzish (zlib bilan, kutubxonasiz)
   visa.ts       Viza turi va holatini kuzatish
   batch.ts      Albomdagi rasmlarni yig'ib, birga o'qish
-  crop.ts       Rasmni hujjatning o'ziga qirqish va to'g'rilash
+  crop.ts       Hujjatni ajratib olish: perspektiva to'g'rilash, chegarani
+                piksellar bo'yicha aniqlashtirish, burish
   day.ts        Kun - O'zbekiston vaqti bo'yicha (UTC emas)
   lock.ts       Bot bir vaqtda bitta bo'lib ishlashi
   backup.ts     Zaxirani shifrlash va ochish
@@ -619,8 +651,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 293 test — bo'laklar alohida
-npm run sinov    # 24 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 310 test — bo'laklar alohida
+npm run sinov    # 28 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -639,11 +671,12 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan to'rt holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan besh holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
-chiqishi, va ID kartaning old tomoni yuborilganda orqa tomonini olish
-aytilishi.
+chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
+qolmasligi, hujjat tekis va to'g'ri tomoni bilan chiqishi), va ID
+kartaning old tomoni yuborilganda orqa tomonini olish aytilishi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

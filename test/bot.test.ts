@@ -99,6 +99,7 @@ function okResult(mrzText: string): ReadResult {
     visaType: null,
     // Chegara yo'q — rasm qirqilmaydi (qirqish alohida testda)
     box: null,
+    quad: null,
     rotation: 0,
   };
 }
@@ -1344,9 +1345,9 @@ test("saqlangan rasm hujjatning o'ziga qirqiladi", async () => {
     img.width < width && img.height < height,
     `rasm qirqilmagan: ${img.width}x${img.height}`,
   );
-  // 2% bo'sh joy bilan: 60% + 4% = 64%
+  // Bo'sh joy HUJJATGA nisbatan: hujjat 720px, 2% dan ikki tomonga → ~749
   assert.ok(
-    Math.abs(img.width - width * 0.64) < 20,
+    Math.abs(img.width - width * 0.6 * 1.04) < 20,
     `kenglik kutilgandan farq qiladi: ${img.width}`,
   );
   store.close();

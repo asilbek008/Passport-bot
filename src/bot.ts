@@ -21,7 +21,7 @@ import { parseVisaType, type VisaType } from "./visa.ts";
 import { withRetry } from "./throttle.ts";
 import { pickPhoto, documentFits } from "./image-pick.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
-import { cropToDocument, type Box, type Rotation } from "./crop.ts";
+import { cropToDocument, type Box, type Quad, type Rotation } from "./crop.ts";
 import {
   savePhoto,
   deletePhoto,
@@ -699,8 +699,20 @@ export async function processBatch(
   let photoProblems = 0;
   /** Nechta rasm hujjatning o'ziga qirqildi */
   let croppedCount = 0;
+  /** Nechta rasm perspektivasi to'g'rilandi (skanerdek tekis bo'ldi) */
+  let flattenedCount = 0;
   /** Nechta rasm to'g'ri holatga burildi */
   let turnedCount = 0;
+  /**
+   * Qirqilgan, lekin hujjat baribir kichik qolgan rasmlar — xodim
+   * yaqinroq turib olishi kerak, aks holda konsullik o'qiy olmaydi
+   */
+  let lowResCount = 0;
+  /**
+   * Qirqilmagan rasmlarning RAQAMI: xodim arxivdagi qaysi rasmni
+   * qo'lda qirqishini bilishi kerak
+   */
+  const notCropped: number[] = [];
   /** Viza yorliqlari — pasportlardan alohida hisobot beriladi */
   const visaOk: string[] = [];
   const visaProblems: string[] = [];
@@ -823,15 +835,26 @@ export async function processBatch(
     // Yonboshlagan rasm ham shu yerda to'g'rilanadi: qirqish va burish
     // birga bajariladi, shunda rasm bir marta qayta siqiladi
     const shot = config.crop
-      ? cropToDocument(
-          image,
-          outcome.box,
-          config.cropMarginPct,
-          outcome.rotation,
-        )
-      : { bytes: image.bytes, cropped: false, turned: 0 as Rotation };
+      ? cropToDocument(image, {
+          // Burchaklar birinchi: qo'lda ushlangan qiyshiq pasport
+          // shular bilan tekis to'rtburchakka to'g'rilanadi
+          quad: outcome.quad,
+          box: outcome.box,
+          marginPct: config.cropMarginPct,
+          rotation: outcome.rotation,
+        })
+      : {
+          bytes: image.bytes,
+          cropped: false,
+          turned: 0 as Rotation,
+          mode: "none" as const,
+          lowRes: false,
+        };
     if (shot.cropped) croppedCount++;
+    else notCropped.push(i + 1);
+    if (shot.mode === "quad") flattenedCount++;
     if (shot.turned !== 0) turnedCount++;
+    if (shot.lowRes) lowResCount++;
 
     // Rasm fayli odam o'qiydigan nom bilan saqlanadi.
     // Bir xil ismli ikki kishi bo'lsa, ikkinchisiga pasport raqami qo'shiladi.
@@ -923,7 +946,10 @@ export async function processBatch(
     total: fileIds.length,
     files: batchRows.length > 0,
     cropped: croppedCount,
+    flattened: flattenedCount,
     turned: turnedCount,
+    lowRes: lowResCount,
+    notCropped,
     photoProblems,
   });
 
@@ -972,6 +998,8 @@ type Outcome =
       image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
       /** Hujjatning kadrdagi chegarasi — qirqish uchun; yo'q bo'lsa null */
       box: Box | null;
+      /** Hujjatning to'rt burchagi — perspektivani to'g'rilash uchun */
+      quad: Quad | null;
       /** Rasmni to'g'rilash uchun burish: 0 | 90 | 180 | 270 */
       rotation: Rotation;
     }
@@ -1010,6 +1038,7 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
         },
         image,
         box: result.box,
+        quad: result.quad,
         rotation: result.rotation,
       };
     }
