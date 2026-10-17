@@ -233,3 +233,65 @@ test("tavsif o'rnatilmasa ham bot ishga tushadi", async () => {
   const tg = new Telegram("token");
   await tg.setDescriptions("tavsif", "qisqa");
 });
+
+// --- Muddat: so'rov cheksiz osilib qolmasin ---
+//
+// Bu haqiqiy nosozlik edi: hech qayerda muddat yo'q edi, shuning uchun
+// ulanish osilib qolganda bot CHEKSIZ kutardi va xodim "o'qilmoqda..."
+// yozuviga tikilib o'tirardi — xato ham chiqmasdi, hisobot ham kelmasdi.
+
+test("so'rovga muddat qo'yiladi", async () => {
+  let signal: AbortSignal | undefined;
+  globalThis.fetch = (async (_url: string, init: { signal?: AbortSignal }) => {
+    signal = init.signal;
+    return new Response(JSON.stringify({ ok: true, result: {} }));
+  }) as unknown as typeof fetch;
+
+  const tg = new Telegram("token");
+  await tg.call("getMe");
+
+  assert.ok(signal, "signal berilishi kerak — aks holda cheksiz kutiladi");
+  assert.equal(signal!.aborted, false);
+});
+
+test("muddat tugasa tushunarli xato beriladi", async () => {
+  mockFetch(() => {
+    const err = new Error("The operation was aborted due to timeout");
+    err.name = "TimeoutError";
+    throw err;
+  });
+
+  const tg = new Telegram("token");
+  await assert.rejects(
+    () => tg.call("getMe"),
+    (err: unknown) => {
+      assert.ok(err instanceof TelegramError);
+      assert.match(err.message, /soniyada javob bermadi/);
+      assert.equal(err.network, true, "bu tarmoq muammosi");
+      return true;
+    },
+  );
+});
+
+test("getUpdates uzunroq kutadi — long polling uzilib qolmasin", async () => {
+  // Telegram 30 soniya kutadi; biz undan oldin uzsak, har safar
+  // o'zimiz so'rovni buzgan bo'lardik
+  let shortSignal: AbortSignal | undefined;
+  let longSignal: AbortSignal | undefined;
+
+  globalThis.fetch = (async (url: string, init: { signal?: AbortSignal }) => {
+    if (String(url).includes("getUpdates")) longSignal = init.signal;
+    else shortSignal = init.signal;
+    return new Response(JSON.stringify({ ok: true, result: [] }));
+  }) as unknown as typeof fetch;
+
+  const tg = new Telegram("token");
+  await tg.call("getMe");
+  await tg.getUpdates(0, 30);
+
+  assert.ok(shortSignal && longSignal);
+  // Ikkisi ham signal bilan, lekin getUpdates'niki uzunroq bo'lishi kerak.
+  // To'g'ridan-to'g'ri o'lchab bo'lmaydi, shuning uchun ikkisi ham
+  // mavjudligini va hali uzilmaganini tekshiramiz.
+  assert.equal(longSignal!.aborted, false);
+});

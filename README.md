@@ -582,7 +582,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 271 test
+npm test         # 280 test
 npm run typecheck
 ```
 
@@ -679,6 +679,15 @@ o'zi siqib beradi va MRZ shunda ham o'qiladi.
 **30 rasm sekin o'qilyapti** — bu ataylab: API chegarasiga urilmaslik uchun
 so'rovlar daqiqada `REQUESTS_PER_MINUTE` (Geminida 10) qilib taqsimlanadi.
 Pullik tarifda `.env` da oshirib qo'ying.
+
+**«O'qilmoqda...» da qotib qoldi** — eski versiyada so'rovlarga muddat
+qo'yilmagan edi, shuning uchun ulanish osilib qolsa bot cheksiz kutardi.
+Hozirgi versiyada har so'rov `REQUEST_TIMEOUT_SECONDS` (standart 90) dan
+oshsa to'xtatiladi va sabab aytiladi. Qayta urinilayotganda ham xabar
+beriladi, ya'ni ekran o'zgarmay qolmaydi.
+
+Shunga qaramay qotib qolsa: terminalda nima yozilganini qarang —
+`[api]` bilan boshlangan qatorda Google'ning asl xabari turadi.
 
 **«To'xtatildi — bu vaqtincha muammo»** — API chegarasiga urildi. Bot 3 marta
 qayta urinib ko'rgan. Bir-ikki daqiqa kutib qayta yuboring; takrorlansa

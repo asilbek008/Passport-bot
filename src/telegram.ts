@@ -80,6 +80,15 @@ export function clipCaption(caption: string, limit = CAPTION_LIMIT): string {
   return `${cut.trimEnd()}…`;
 }
 
+/**
+ * Har so'rovning muddati. Bo'lmasa, ulanish osilib qolganda bot
+ * cheksiz kutadi va xodim "o'qilmoqda..." da qotib qoladi.
+ *
+ * `getUpdates` bundan mustasno: u ataylab uzoq kutadi (long polling),
+ * shuning uchun unga alohida, kattaroq muddat beriladi.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export class Telegram {
   private readonly token: string;
 
@@ -91,15 +100,27 @@ export class Telegram {
     return `https://api.telegram.org/bot${this.token}`;
   }
 
-  async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  async call<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  ): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.base}/${method}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(params),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
+      // Muddat tugadi — ulanib bo'lmaganidan ajratib aytamiz
+      if (err instanceof Error && err.name === "TimeoutError") {
+        throw new TelegramError(
+          `Telegram ${Math.round(timeoutMs / 1000)} soniyada javob bermadi (${method})`,
+          { network: true },
+        );
+      }
       // Internet yo'q, DNS ishlamadi, proksi/faervol to'sdi
       throw new TelegramError(
         `Telegramga ulanib bo'lmadi (${method}): ${err instanceof Error ? err.message : err}`,
@@ -180,6 +201,7 @@ export class Telegram {
     const file = await this.call<{ file_path: string }>("getFile", { file_id: fileId });
     const res = await fetch(
       `https://api.telegram.org/file/bot${this.token}/${file.file_path}`,
+      { signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) },
     );
     if (!res.ok) throw new Error(`Faylni yuklab bo'lmadi: ${res.status}`);
     const bytes = new Uint8Array(await res.arrayBuffer());
@@ -215,7 +237,12 @@ export class Telegram {
       }),
       name,
     );
-    const res = await fetch(`${this.base}/sendDocument`, { method: "POST", body: form });
+    // Fayl yuborish uzoqroq: 45 MB arxiv sekin ketadi
+    const res = await fetch(`${this.base}/sendDocument`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS * 6),
+    });
     const body = (await res.json()) as { ok: boolean; description?: string };
     if (!body.ok) throw new Error(`sendDocument: ${body.description ?? res.status}`);
   }
@@ -287,11 +314,17 @@ export class Telegram {
    * shuning uchun bu tsikl protsessorni yemaydi.
    */
   async getUpdates(offset: number, timeout = 30): Promise<TgUpdate[]> {
-    return this.call<TgUpdate[]>("getUpdates", {
-      offset,
-      timeout,
-      // Tugma bosilgani alohida tur — so'ralmasa umuman kelmaydi
-      allowed_updates: ["message", "callback_query"],
-    });
+    return this.call<TgUpdate[]>(
+      "getUpdates",
+      {
+        offset,
+        timeout,
+        // Tugma bosilgani alohida tur — so'ralmasa umuman kelmaydi
+        allowed_updates: ["message", "callback_query"],
+      },
+      // Long polling: Telegram `timeout` soniya kutadi, biz undan
+      // ko'proq kutamiz — aks holda har safar o'zimiz uzib yuborardik
+      (timeout + 15) * 1000,
+    );
   }
 }

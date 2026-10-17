@@ -57,6 +57,9 @@ export async function readWithGemini(
         },
       ],
       config: {
+        // MUDDAT: bo'lmasa, ulanish osilib qolganda bot cheksiz kutadi
+        // va xodim "o'qilmoqda..." da qotib qoladi — xato ham chiqmaydi
+        abortSignal: AbortSignal.timeout(config.requestTimeoutMs),
         systemInstruction: SYSTEM,
         // JSON so'raymiz — model atrofiga izoh qo'shib qo'ymasligi uchun
         responseMimeType: "application/json",
@@ -104,6 +107,23 @@ export function geminiFailure(err: unknown): ReadResult {
 
   const message = err instanceof Error ? err.message : String(err);
   const lower = message.toLowerCase();
+
+  // MUDDAT TUGADI — eng chalkash holat: hech qanday HTTP kodi yo'q,
+  // xato matni ham tushunarsiz. Buni birinchi ushlaymiz.
+  const name = err instanceof Error ? err.name : "";
+  if (
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    lower.includes("aborted") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout")
+  ) {
+    return fail(
+      `Gemini ${Math.round(config.requestTimeoutMs / 1000)} soniyada javob bermadi. ` +
+        "Internet sekin yoki Google'ga ulanish to'silgan bo'lishi mumkin",
+      true,
+    );
+  }
 
   // HTTP kodini xabardan yoki obyektdan olamiz
   const status =

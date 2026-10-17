@@ -156,6 +156,22 @@ export const config = {
   },
 
   /**
+   * Bitta so'rov shuncha soniyadan uzoq cho'zilsa — to'xtatiladi.
+   *
+   * NEGA KERAK: avval hech qayerda muddat yo'q edi. Agar Google'ga
+   * yoki Telegramga ulanish osilib qolsa (sekin tarmoq, proksi,
+   * faervol), bot CHEKSIZ kutardi va xodim "o'qilmoqda..." yozuviga
+   * tikilib o'tirardi — xato ham chiqmasdi, hisobot ham kelmasdi.
+   *
+   * 90 soniya: rasm o'qish odatda 3-10 soniya oladi, sekin tarmoqda
+   * 30 gacha chiqishi mumkin. 90 dan oshsa — bu sekinlik emas, osilib
+   * qolish.
+   */
+  get requestTimeoutMs(): number {
+    return Math.round(num("REQUEST_TIMEOUT_SECONDS", 90) * 1000);
+  },
+
+  /**
    * Rasmni hujjatning o'ziga qirqish (standart — yoqilgan).
    *
    * O'chirish kerak bo'lsa: `CROP=off`. Shunda rasm xodim yuborgan holida

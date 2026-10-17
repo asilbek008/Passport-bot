@@ -78,7 +78,19 @@ export type RetryOutcome<T> =
 export async function withRetry<T>(
   run: () => Promise<T>,
   isRetryable: (result: T) => boolean,
-  options: { tries?: number; baseMs?: number; sleep?: Sleep } = {},
+  options: {
+    tries?: number;
+    baseMs?: number;
+    sleep?: Sleep;
+    /**
+     * Qayta urinishdan oldin chaqiriladi.
+     *
+     * Kerak, chunki qayta urinish uzoq cho'zilishi mumkin (muddat
+     * tugashi 90 soniya). Xodimga xabar berilmasa, u "o'qilmoqda..."
+     * yozuviga tikilib, bot qotib qoldi deb o'ylaydi.
+     */
+    onRetry?: (attempt: number, tries: number) => void | Promise<void>;
+  } = {},
 ): Promise<RetryOutcome<T>> {
   const tries = options.tries ?? 3;
   const baseMs = options.baseMs ?? 1000;
@@ -87,6 +99,7 @@ export async function withRetry<T>(
   let last = await run();
   for (let attempt = 1; attempt < tries; attempt++) {
     if (!isRetryable(last)) return { ok: true, value: last };
+    await options.onRetry?.(attempt + 1, tries);
     await sleep(baseMs * 2 ** (attempt - 1));
     last = await run();
   }

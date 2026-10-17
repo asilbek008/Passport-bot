@@ -200,3 +200,37 @@ test("asl xabar juda uzun bo'lsa qisqartiriladi", () => {
   const detail = result.ok === false && "detail" in result ? result.detail : undefined;
   assert.ok(detail && detail.length <= 400);
 });
+
+// --- Muddat tugashi ---
+
+test("muddat tugashi tushunarli aytiladi va qayta urinishga arziydi", () => {
+  const err = new Error("The operation was aborted");
+  err.name = "AbortError";
+  const result = geminiFailure(err);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+
+  assert.match(problem, /soniyada javob bermadi/);
+  assert.match(problem, /sekin|to'silgan/, "sababi taxmin qilinadi");
+  assert.equal(
+    result.ok === false && "retryable" in result && result.retryable,
+    true,
+    "vaqtincha bo'lishi mumkin — qayta urinamiz",
+  );
+});
+
+test("TimeoutError ham ushlanadi", () => {
+  const err = new Error("timed out");
+  err.name = "TimeoutError";
+  const result = geminiFailure(err);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+  assert.match(problem, /soniyada javob bermadi/);
+});
+
+test("muddat xatosi model xatosi deb ko'rsatilmaydi", () => {
+  const err = new Error("Request aborted");
+  err.name = "AbortError";
+  const result = geminiFailure(err);
+  const problem = result.ok === false && "problem" in result ? result.problem : "";
+  assert.ok(!/GEMINI_MODEL/.test(problem), "model aybdor emas");
+  assert.ok(!/kalit/.test(problem), "kalit ham aybdor emas");
+});

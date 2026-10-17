@@ -149,3 +149,70 @@ test("urinishlar tugasa ok=false qaytadi", async () => {
   assert.equal(result.ok === false && result.attempts, 3);
   assert.deepEqual(t.slept, [500, 1000]);
 });
+
+// --- Qayta urinishdan xabar berish ---
+//
+// Muddat tugashi 90 soniya. Jim turilsa, xodim "o'qilmoqda..." ga
+// tikilib, bot qotib qoldi deb o'ylaydi.
+
+test("qayta urinishdan oldin xabar beriladi", async () => {
+  const notices: { attempt: number; tries: number }[] = [];
+  let calls = 0;
+
+  await withRetry(
+    async () => {
+      calls++;
+      return calls < 3 ? "band" : "tayyor";
+    },
+    (result) => result === "band",
+    {
+      tries: 3,
+      baseMs: 1,
+      sleep: async () => {},
+      onRetry: (attempt, tries) => {
+        notices.push({ attempt, tries });
+      },
+    },
+  );
+
+  assert.equal(calls, 3);
+  assert.deepEqual(notices, [
+    { attempt: 2, tries: 3 },
+    { attempt: 3, tries: 3 },
+  ]);
+});
+
+test("birinchi urinish muvaffaqiyatli bo'lsa xabar berilmaydi", async () => {
+  let notified = false;
+  await withRetry(async () => "tayyor", () => false, {
+    sleep: async () => {},
+    onRetry: () => {
+      notified = true;
+    },
+  });
+  assert.equal(notified, false, "bekorga xabar berilmasligi kerak");
+});
+
+test("xabar berish kutiladi — tartib buzilmaydi", async () => {
+  const order: string[] = [];
+  await withRetry(
+    async () => {
+      order.push("urinish");
+      return "band";
+    },
+    () => true,
+    {
+      tries: 2,
+      baseMs: 1,
+      sleep: async () => {
+        order.push("kutish");
+      },
+      onRetry: async () => {
+        // Sekin xabar: kutishdan OLDIN tugashi kerak
+        await new Promise((r) => setTimeout(r, 5));
+        order.push("xabar");
+      },
+    },
+  );
+  assert.deepEqual(order, ["urinish", "xabar", "kutish", "urinish"]);
+});

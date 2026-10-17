@@ -648,9 +648,14 @@ export async function processBatch(
   const savedDocs: string[] = [];
 
   for (let i = 0; i < fileIds.length; i++) {
-    // Progressni har 3 rasmda yangilaymiz — har birida yangilash
-    // Telegram chekloviga urilardi
-    if (fileIds.length > 3 && i > 0 && i % 3 === 0) {
+    // Nima bo'layotgani KO'RINIB tursin.
+    //
+    // Avval progress faqat 3 rasmdan ko'p bo'lganda va har 3-tasida
+    // yangilanardi. Bitta rasm yuborilganda esa "o'qilmoqda..." yozuvi
+    // boshdan oxirigacha o'zgarmasdi — ishlayotgan bot ham qotgandek
+    // ko'rinardi. Endi kichik to'plamda har rasmda yangilanadi
+    // (Telegram chekloviga urilmaydi: 3-5 ta yangilanish arzimas).
+    if (i > 0 && (fileIds.length <= 5 || i % 3 === 0)) {
       await tg.editMessage(
         chatId,
         progress.message_id,
@@ -666,7 +671,19 @@ export async function processBatch(
     const attempt = await withRetry(
       () => readOne(fileIds[i], deps, now),
       (result) => result.kind === "api" && result.retryable,
-      { tries: 3, baseMs: 2000, sleep: deps.sleep },
+      {
+        tries: 3,
+        baseMs: 2000,
+        sleep: deps.sleep,
+        // Qayta urinish 90 soniyagacha cho'zilishi mumkin — jim
+        // turmaymiz, aks holda qotib qolgandek ko'rinadi
+        onRetry: (attemptNo, tries) =>
+          tg.editMessage(
+            chatId,
+            progress.message_id,
+            t.retrying(i + 1, fileIds.length, attemptNo, tries),
+          ),
+      },
     );
     const outcome = attempt.value;
 

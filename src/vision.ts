@@ -109,6 +109,17 @@ export function apiFailure(err: unknown): ReadResult {
     return typeof inner === "string" && inner.length > 0 ? inner : e.message;
   };
 
+  // MUDDAT TUGADI — birinchi tekshiramiz: xato matni tushunarsiz
+  // bo'ladi va boshqa shartlarga tushib ketishi mumkin
+  const name = err instanceof Error ? err.name : "";
+  if (name === "APIConnectionTimeoutError" || name === "TimeoutError") {
+    return fail(
+      `Claude ${Math.round(config.requestTimeoutMs / 1000)} soniyada javob bermadi. ` +
+        "Internet sekin yoki ulanish to'silgan bo'lishi mumkin",
+      true,
+    );
+  }
+
   // Eng aniq turdan boshlab tekshiramiz
   if (err instanceof Anthropic.AuthenticationError) {
     return fail("API kaliti qabul qilinmadi — ANTHROPIC_API_KEY ni tekshiring", false);

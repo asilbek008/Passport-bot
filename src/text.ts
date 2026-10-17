@@ -161,6 +161,19 @@ export const t = {
   progress: (done: number, total: number) =>
     `O'qilmoqda: ${done} / ${total}`,
 
+  /**
+   * Qayta urinilmoqda. Muddat tugashi 90 soniya bo'lgani uchun
+   * bu uzoq cho'zilishi mumkin — xodim qotib qoldi deb o'ylamasin.
+   */
+  retrying: (photo: number, total: number, attempt: number, tries: number) =>
+    [
+      total > 1
+        ? `${photo} / ${total} — javob kelmadi, qayta urinilmoqda (${attempt}/${tries})`
+        : `Javob kelmadi, qayta urinilmoqda (${attempt}/${tries})`,
+      "",
+      "_Internet sekin bo'lsa bu bir-ikki daqiqa olishi mumkin._",
+    ].join("\n"),
+
   dailyLimit: `Bugungi chegaraga (${config.dailyLimit} rasm) yetdingiz. Ertaga davom etasiz yoki \`DAILY_LIMIT\` ni oshirasiz.`,
 
   groupsNotAllowed:
