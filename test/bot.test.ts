@@ -1396,3 +1396,55 @@ test("/royxat uzun ro'yxatni qisqartiradi — bitta xabar bo'lib qoladi", async 
   assert.ok(!text.includes("FAMILIYA40"), "41-chi ko'rinmasligi kerak");
   store.close();
 });
+
+// --- /sinov: tugmalar haqiqiy Telegramda ishlayaptimi ---
+//
+// Bu buyruq men tekshira olmagan joyni xodimning o'zi 10 soniyada
+// tekshirishi uchun: tugma chizilyaptimi va bosilgani yetib kelyaptimi.
+
+test("/sinov uchta tugma bilan xabar yuboradi", async () => {
+  const { deps, sent, documents, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/sinov"), deps as never);
+
+  assert.equal(sent.length, 1);
+  assert.equal(documents.length, 0, "sinov fayl yubormaydi");
+  const message = sent[0];
+  assert.ok(message.buttons, "tugmalar bo'lishi kerak");
+  assert.deepEqual(
+    message.buttons!.map((b) => b.data),
+    ["sinov:zip", "sinov:excel", "sinov:farq"],
+  );
+  // Yorliqlar haqiqiy tugmalar bilan bir xil — ko'rinishini sinaymiz
+  assert.deepEqual(
+    message.buttons!.map((b) => b.text),
+    ["🗂 Zip qilib olish", "📊 Excel qilib olish", "🔍 Pasport farqlash"],
+  );
+  store.close();
+});
+
+test("sinov tugmasi bosilsa javob keladi, fayl kelmaydi", async () => {
+  const { deps, sent, documents, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/sinov"), deps as never);
+  await handleUpdate(pressButton(OPERATOR, "sinov:zip"), deps as never);
+
+  assert.equal(documents.length, 0, "sinovda fayl yuborilmaydi");
+  const answer = sent.at(-1)!.text;
+  assert.match(answer, /Tugma ishladi/);
+  assert.match(answer, /Zip qilib olish/, "qaysi tugma bosilgani aytiladi");
+  store.close();
+});
+
+test("sinov bazaga tegmaydi", async () => {
+  const { deps, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/sinov"), deps as never);
+  await handleUpdate(pressButton(OPERATOR, "sinov:farq"), deps as never);
+  assert.equal(store.count(), 0, "hech narsa saqlanmasligi kerak");
+  store.close();
+});
+
+test("sinov tugmasini begona odam bosa olmaydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(pressButton(STRANGER, "sinov:zip"), deps as never);
+  assert.match(sent.at(-1)!.text, /faqat xodimlar uchun/);
+  store.close();
+});

@@ -225,6 +225,7 @@ tugmasi qilib ko'rsatadi.
 | `/kod` | Yangi xodim uchun bir martalik kod |
 | `/xodimlar` | Ruxsat berilganlar ro'yxati |
 | `/xodim_ochir 123456789` | Ruxsatni olib tashlaydi |
+| `/sinov` | Tugmalar ishlayaptimi — tekshirish (hech narsa saqlanmaydi) |
 | `/yordam` | Shu ro'yxat |
 
 ### Excel faylda nima bo'ladi
@@ -581,7 +582,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 267 test
+npm test         # 271 test
 npm run typecheck
 ```
 

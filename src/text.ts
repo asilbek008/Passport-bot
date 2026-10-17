@@ -138,6 +138,9 @@ export const t = {
     "`/vizani_ochir <pasport>` — viza ma'lumotini olib tashlash",
     "`/ogohlik` — pasporti tez tugaydiganlar",
     "",
+    "*Tekshirish:*",
+    "`/sinov` — tugmalar ishlayaptimi (hech narsa saqlanmaydi)",
+    "",
     "*Tozalash:*",
     "`/ochir <pasport raqami>` — bitta yozuvni va rasmini o'chirish",
     "`/tozalash` — saqlash muddati o'tgan yozuvlarni o'chirish",
@@ -473,6 +476,35 @@ export const t = {
     n === 1
       ? "*1 ta hujjat tayyor.* Nima kerak?"
       : `*${n} ta hujjat tayyor.* Nima kerak?`,
+
+  /**
+   * `/sinov` — tugmalar ishlayotganini tekshirish.
+   *
+   * Nega kerak: tugmalar Telegramda chizilishini va bosilgani botga
+   * yetib kelishini faqat HAQIQIY Telegramda ko'rish mumkin. Testlar
+   * soxta Telegram bilan ishlaydi — ular `reply_markup` to'g'ri
+   * shaklda ketayotganini tekshiradi, chizilishini emas.
+   */
+  sinov: [
+    "*Tugmalarni tekshirish*",
+    "",
+    "Quyida uchta tugma ko'rinishi kerak. Bittasini bosing —",
+    "javob kelsa, hammasi ishlayapti.",
+    "",
+    "_Bu sinov: hech narsa saqlanmaydi, fayl ham yuborilmaydi._",
+  ].join("\n"),
+
+  sinovOk: (label: string) =>
+    [
+      `✅ *Tugma ishladi:* ${esc(label)}`,
+      "",
+      "Demak uchala narsa joyida:",
+      "• tugmalar Telegramda chizilyapti",
+      "• bosilgani botga yetib kelyapti",
+      "• bot javob qaytaryapti",
+      "",
+      "Endi pasport rasmini yuborib ko'rsangiz bo'ladi.",
+    ].join("\n"),
 
   buttons: {
     zip: "🗂 Zip qilib olish",

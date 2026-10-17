@@ -190,8 +190,21 @@ async function handleCallback(
   }
 
   const [action, raw] = (query.data ?? "").split(":");
+  if (!action) return;
+
+  // Sinov tugmasi: to'plam ham, fayl ham yo'q — faqat javob
+  if (action === "sinov") {
+    const labels: Record<string, string> = {
+      zip: t.buttons.zip,
+      excel: t.buttons.excel,
+      farq: t.buttons.kinds,
+    };
+    await reply(deps.tg, chatId, t.sinovOk(labels[raw] ?? raw));
+    return;
+  }
+
   const batchId = Number(raw);
-  if (!action || !Number.isInteger(batchId)) return;
+  if (!Number.isInteger(batchId)) return;
 
   const docNumbers = deps.store.batch(batchId, chatId);
   // Bot qayta ishga tushgan yoki to'plam eskirgan bo'lishi mumkin
@@ -282,6 +295,19 @@ async function handleCommand(
     case "yordam":
     case "help":
       await reply(tg, chatId, t.help);
+      return;
+
+    // Tugmalar haqiqiy Telegramda ishlayotganini tekshirish.
+    // Testlar soxta Telegram bilan ishlaydi — ular tugmaning
+    // CHIZILISHINI tekshira olmaydi, bu buyruq esa tekshiradi.
+    case "sinov":
+      await tg.sendMessage(chatId, t.sinov, {
+        reply_markup: Telegram.keyboard([
+          { text: t.buttons.zip, data: "sinov:zip" },
+          { text: t.buttons.excel, data: "sinov:excel" },
+          { text: t.buttons.kinds, data: "sinov:farq" },
+        ]),
+      });
       return;
 
     case "royxat": {
