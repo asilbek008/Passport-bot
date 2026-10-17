@@ -594,6 +594,9 @@ scripts/
   zaxira.ts     `npm run zaxira` — shifrlangan zaxira
   tiklash.ts    `npm run tiklash <fayl>` — zaxiradan qaytarish
   modellar.ts   `npm run modellar` — kalitga ruxsat berilgan modellar
+test/
+  *.test.ts     bo'laklarning testlari (`npm test`)
+  e2e/run.mjs   `npm run sinov` — botning o'zini ishga tushirib tekshirish
 windows/
   1-ornatish.bat    o'rnatish (ikki marta bosiladi)
   2-boshlash.bat    ishga tushirish, o'zi qayta ko'tariladi
@@ -604,9 +607,34 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 289 test
+npm test         # 289 test — bo'laklar alohida
+npm run sinov    # 21 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
+
+### `npm run sinov` — o'zgarish kiritgandan keyin
+
+`npm test` bo'laklarni alohida tekshiradi. `npm run sinov` esa butun yo'lni
+boshidan oxirigacha o'tadi: bot ishga tushadi, rasm "keladi", o'qiladi,
+qirqiladi, bazaga yoziladi, tugmalar chiqadi, tugma bosiladi va Excel/zip
+qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
+(mahalliy server ularning o'rnida javob beradi), shuning uchun:
+
+- haqiqiy bot tokeni kerak emas;
+- API kaliti kerak emas — pul ketmaydi;
+- internet kerak emas;
+- haqiqiy pasport ishlatilmaydi (rasmlar shu yerda chiziladi);
+- sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
+  vaqtinchalik papkada ishlaydi va o'chadi.
+
+Tekshiriladigan uchta holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
+rasm to'g'rilanishi, va API kaliti xato bo'lganda xodimga tushunarli xabar
+chiqishi.
+
+Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
+uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta
+tugma yuboradi, bosganingizda "Tugma ishladi" deb javob beradi.
 
 ### Texnik qarorlar
 

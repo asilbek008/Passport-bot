@@ -11,6 +11,7 @@
     "setup": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/setup.ts",
     "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts",
     "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test test/*.test.ts",
+    "sinov": "node --experimental-strip-types --no-warnings=ExperimentalWarning test/e2e/run.mjs",
     "typecheck": "tsc --noEmit",
     "tekshir": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/tekshir.ts",
     "zaxira": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/zaxira.ts",
