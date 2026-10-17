@@ -388,17 +388,17 @@ export const t = {
     limit: number;
     superadmin: boolean;
   }) => {
-    const out = [
+    const out: (string | null)[] = [
       `*Profil*${p.superadmin ? " — bot egasi" : ""}`,
       "",
       `Telegram raqami: \`${p.chatId}\``,
-      p.joinedAt ? `Ro'yxatga olingan: ${localDay(p.joinedAt)}` : "",
+      p.joinedAt ? `Ro'yxatga olingan: ${localDay(p.joinedAt)}` : null,
       "",
       "*Siz o'qigan hujjatlar*",
       `Bugun: *${p.today}*`,
       `Oxirgi 30 kunda: *${p.month}*`,
       `Jami: *${p.total}*`,
-      p.lastAt ? `Oxirgi hujjat: ${localDay(p.lastAt)}` : "",
+      p.lastAt ? `Oxirgi hujjat: ${localDay(p.lastAt)}` : null,
       "",
       `*Bugungi rasm chegarasi:* ${p.usedToday} / ${p.limit}`,
       p.usedToday >= p.limit
@@ -408,7 +408,7 @@ export const t = {
     if (p.superadmin) {
       out.push("", "Butun bot bo'yicha sonlar: /statistika");
     }
-    return out.filter((line) => line !== "").join("\n");
+    return out.filter((line) => line !== null).join("\n");
   },
 
   /** Faqat egasi uchun: butun bot bo'yicha sonlar. */
@@ -427,7 +427,7 @@ export const t = {
     me: number;
     months: number;
   }) => {
-    const out = [
+    const out: (string | null)[] = [
       "*Statistika* — butun bot bo'yicha",
       "",
       "*Hujjatlar*",
@@ -435,7 +435,7 @@ export const t = {
       `Oxirgi 7 kunda: *${s.week}*`,
       `Oxirgi 30 kunda: *${s.month}*`,
       `Jami: *${s.documents}*`,
-      s.firstAt ? `Birinchi hujjat: ${localDay(s.firstAt)}` : "",
+      s.firstAt ? `Birinchi hujjat: ${localDay(s.firstAt)}` : null,
       "",
       `Rasmi bor: *${s.photos}*`,
       `Vizasi belgilangan: *${s.withVisa}*`,
@@ -460,7 +460,7 @@ export const t = {
       }
     }
 
-    return out.filter((line) => line !== "").join("\n");
+    return out.filter((line) => line !== null).join("\n");
   },
 
   /** Statistika faqat egasiga. */
