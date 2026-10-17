@@ -693,7 +693,8 @@ export async function processBatch(
   const progress = await tg.sendMessage(chatId, t.photoQueued(fileIds.length));
 
   const ok: string[] = [];
-  const failed: string[] = [];
+  /** Nosozliklar: raqami, sababi, kodi va tashxisi bilan */
+  const fails: { index: number; why: string; code?: string; diag?: string }[] = [];
   const warnings: string[] = [];
   /** Allaqachon egallangan rasm nomlari (bir xil ismlilar uchun) */
   const takenPaths = new Set(store.photoPaths());
@@ -782,7 +783,12 @@ export async function processBatch(
     }
 
     if (outcome.kind === "failed") {
-      failed.push(t.failLine(i + 1, outcome.why));
+      fails.push({
+        index: i + 1,
+        why: outcome.why,
+        code: outcome.code,
+        diag: outcome.diag,
+      });
       continue;
     }
 
@@ -941,9 +947,36 @@ export async function processBatch(
   // Shu to'plamda saqlangan pasportlar — fayllar aynan shular bo'yicha
   const batchRows = store.byDocNumbers(savedDocs);
 
+  /**
+   * ID KARTANING IKKI TOMONI — bitta hujjat.
+   *
+   * Xodim kartaning old tomonini ham, orqasini ham yuboradi (konsullikka
+   * ikkalasi kerak). Old tomonida MRZ yo'q, shuning uchun u "o'qilmadi"
+   * bo'lib chiqardi va xodim nimadir buzilgan deb o'ylardi. Agar shu
+   * to'plamda ID KARTA o'qilgan bo'lsa, MRZ ko'rinmagan rasmlar xato
+   * emas — ular o'sha kartaning old tomoni.
+   */
+  const idRead = batchRows.some((row) => row.doc_kind === "id");
+  const notes: string[] = [];
+  const failed: string[] = [];
+  for (const fail of fails) {
+    if (idRead && fail.code === "no_mrz") {
+      notes.push(t.idOtherSide(fail.index));
+      continue;
+    }
+    failed.push(t.failLine(fail.index, fail.why));
+  }
+  // Tashxis: model nimani ko'rgan. Hujjat ma'lumoti yo'q — faqat turi
+  // va qatorlar soni, shuning uchun ko'rsatish xavfsiz
+  const diagnostics = fails
+    .filter((f) => failed.length > 0 && f.diag)
+    .map((f) => `${f.index}-rasm — ${f.diag}`);
+
   const report = t.batchReport({
     ok,
     failed,
+    notes,
+    diagnostics,
     warnings,
     visaOk,
     visaProblems,
@@ -1010,7 +1043,14 @@ type Outcome =
       /** Birinchi urinishda o'qilmay, kesilgan rasmdan o'qildimi */
       zoomed: boolean;
     }
-  | { kind: "failed"; why: string }
+  | {
+      kind: "failed";
+      why: string;
+      /** `no_mrz` — MRZ umuman ko'rinmadi (ehtimol ID kartaning old tomoni) */
+      code?: "no_mrz";
+      /** Model nimani ko'rgani: turi va qatorlar soni (ma'lumotsiz) */
+      diag?: string;
+    }
   /** API'ning o'zi ishlamadi — qolgan rasmlarni o'qishdan ma'no yo'q */
   | { kind: "api"; why: string; retryable: boolean };
 
@@ -1133,9 +1173,14 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
       // ID kartaning old tomoni — MRZ orqa tomonda. Yechimi rasmni
       // yaxshilash emas, boshqa tomonini olish
       case "id_front":
-        return { kind: "failed", why: t.reasonIdBack };
+        return {
+          kind: "failed",
+          why: t.reasonIdBack,
+          code: "no_mrz",
+          diag: result.diag,
+        };
       case "id_back_unclear":
-        return { kind: "failed", why: t.reasonIdUnclear };
+        return { kind: "failed", why: t.reasonIdUnclear, diag: result.diag };
       // MRZ ko'rindi, lekin qatorlar shakli to'g'ri kelmadi.
       // Sabab O'ZIMIZNING kodimizdan (qatorlar soni va uzunligi),
       // ichida hujjat ma'lumoti yo'q — xodimga aytamiz, chunki
@@ -1152,7 +1197,15 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
         if (result.detail) console.error(`[api] asl xabar: ${result.detail}`);
         return { kind: "api", why: result.problem, retryable: result.retryable };
       default:
-        return { kind: "failed", why: t.reasonUnreadable };
+        return {
+          kind: "failed",
+          why: t.reasonUnreadable,
+          // MRZ umuman ko'rinmagan bo'lsa — bu ehtimol ID kartaning
+          // old tomoni. Shu to'plamda uning orqa tomoni o'qilgan bo'lsa,
+          // xato emas, izoh bo'lib chiqadi
+          code: result.noMrz ? "no_mrz" : undefined,
+          diag: result.diag,
+        };
     }
   } catch (err) {
     // Xato MATNI jurnalga yozilmaydi — ichida hujjat ma'lumoti bo'lishi mumkin

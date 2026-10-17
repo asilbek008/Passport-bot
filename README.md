@@ -381,6 +381,13 @@ butunlay boshqacha:
 | **Orqa tomoni**, lekin rasm xira | «pastdagi 3 qator aniq chiqmadi — kartani tekis qo'yib, yorug'da va yaqinroqdan oling» |
 | MRZ ko'rindi, lekin qatorlar shakli to'g'ri kelmadi | «MRZ qatorlari to'g'ri chiqmadi (3 qator: 30, 27, 30 belgi)» — ya'ni nima bo'lgani aniq aytiladi |
 
+**Ikkala tomonini birga yuborsangiz ham bo'ladi.** Konsullikka
+ko'pincha ikkalasi kerak, shuning uchun xodim ikkalasini yuboradi.
+Old tomonida MRZ yo'q, lekin shu to'plamda orqa tomoni o'qilgan bo'lsa,
+bot old tomonini XATO deb ko'rsatmaydi — "ℹ️ 1-rasm — ID kartaning
+ikkinchi tomoni" deb izoh qo'yadi. Avval u "o'qilmadi" ro'yxatiga
+tushardi va xodim nimadir buzilgan deb o'ylardi.
+
 Qaysi tomoni ekanini model aytadi (`id_side`). Bu muhim: orqa tomonini
 yuborgan odamga «teskari qiling» desak, u kartani aylantirib
 yuraveradi va muammo hech qachon hal bo'lmaydi.
@@ -693,8 +700,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 325 test — bo'laklar alohida
-npm run sinov    # 34 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 327 test — bo'laklar alohida
+npm run sinov    # 38 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -713,14 +720,16 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan yetti holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan sakkiz holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
 qolmasligi, hujjat tekis va to'g'ri tomoni bilan chiqishi), ID
 kartaning old tomoni yuborilganda orqa tomonini olish aytilishi, orqa
 tomoni xira bo'lganda «teskari qiling» deyilmasligi, va kadrda kichik
-ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi.
+ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi, va
+ID kartaning ikkala tomoni birga yuborilganda bitta hujjat bo'lib,
+xatosiz chiqishi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

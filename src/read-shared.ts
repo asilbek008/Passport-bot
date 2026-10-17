@@ -96,7 +96,14 @@ QAT'IY QOIDALAR:
    (pasportda 44, ID kartada 30 belgi).
 5. 0 va O, 1 va I ni diqqat bilan ajrat: MRZ da raqam va harf farq qiladi.
 6. Rasmda hujjat bo'lmasa — document_kind='not_a_document', mrz_lines=[].
-7. ID KARTA bo'lsa, QAYSI TOMONI ekanini ayt:
+7. ID KARTA — bu shaxsni tasdiqlovchi KARTA (bank kartasi o'lchamida).
+   O'zbekistonda uning nomi "SHAXS GUVOHNOMASI" / "ID CARD"; boshqa
+   davlatlarda "IDENTITY CARD", "удостоверение личности" va hokazo.
+   Bunday hujjatda HAR DOIM document_kind='id_card' bo'ladi — qaysi
+   tomoni ko'rinayotganidan qat'i nazar. Uni 'passport' yoki 'other'
+   deb belgilama: pasport — kitobcha, karta emas.
+
+   ID KARTA bo'lsa, QAYSI TOMONI ekanini ayt:
    • id_side='front' — old tomoni: surat, ism, karta raqami ko'rinadi,
      lekin MRZ qatorlari YO'Q. Bunda document_kind='id_card',
      mrz_readable=false, mrz_lines=[]. MRZ ID kartaning ORQA tomonida
@@ -195,6 +202,14 @@ export type ReadResult =
        */
       box?: Box | null;
       quad?: Quad | null;
+      /**
+       * Tashxis: model hujjatni qanday belgilagani va nechta MRZ qatori
+       * bergani. Hujjat ma'lumoti YO'Q — faqat turi va soni, shuning
+       * uchun xodimga ham ko'rsatiladi va menga yetib keladi.
+       */
+      diag?: string;
+      /** MRZ qatorlari umuman ko'rinmadi — ehtimol kartaning old tomoni */
+      noMrz?: boolean;
       reason:
         | "unreadable"
         | "not_a_document"
@@ -221,6 +236,14 @@ export type ReadResult =
        */
       box?: Box | null;
       quad?: Quad | null;
+      /**
+       * Tashxis: model hujjatni qanday belgilagani va nechta MRZ qatori
+       * bergani. Hujjat ma'lumoti YO'Q — faqat turi va soni, shuning
+       * uchun xodimga ham ko'rsatiladi va menga yetib keladi.
+       */
+      diag?: string;
+      /** MRZ qatorlari umuman ko'rinmadi — ehtimol kartaning old tomoni */
+      noMrz?: boolean;
       reason: "api_error";
       problem: string;
       retryable: boolean;
@@ -311,6 +334,12 @@ export function interpret(text: string, today: Date): ReadResult {
     // `id_side` javobiga qarab qabul qilinadi; u aytilmagan bo'lsa,
     // MRZ qatorlari umuman ko'rinmagani (mrz_lines bo'sh) — old tomoni
     // bo'lishining belgisi.
+    // Tashxis uchun: model hujjatni qanday belgiladi va nechta qator
+    // berdi. Bu yerda hujjat MA'LUMOTI yo'q — faqat turi va soni
+    const diag = `turi: ${out.document_kind}` +
+      (out.id_side ? `/${out.id_side}` : "") +
+      `, MRZ qatori: ${out.mrz_lines.length}`;
+
     const front =
       out.document_kind === "id_card" &&
       (out.id_side === "front" ||
@@ -327,6 +356,9 @@ export function interpret(text: string, today: Date): ReadResult {
             "id_back_unclear"
           : "unreadable",
       problem: out.problem ?? "MRZ qatorlari aniq ko'rinmadi.",
+      diag,
+      /** MRZ qatorlari umuman ko'rinmadimi (old tomoni belgisi) */
+      noMrz: out.mrz_lines.length === 0,
     };
   }
 

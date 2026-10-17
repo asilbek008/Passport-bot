@@ -236,6 +236,12 @@ const idCard = {
 };
 people.push(idCard);
 
+// ID kartaning OLD tomoni: MRZ yo'q, faqat surat va ism
+const idFront = {
+  file_id: "sinov-rasm-id-old",
+  image: passportImage(1300, 980),
+};
+
 const byLength = new Map(people.map((p) => [p.image.bytes.length, p]));
 const byFileId = new Map(people.map((p) => [p.file_id, p]));
 
@@ -300,7 +306,7 @@ async function withBot(mode, steps) {
 
     if (url.pathname.startsWith("/file/")) {
       const id = url.pathname.replace("/file/photos/", "").replace(/\.jpg$/, "");
-      const person = byFileId.get(id);
+      const person = id === idFront.file_id ? idFront : byFileId.get(id);
       if (!person) return send({ ok: false }, 404);
       res.writeHead(200, { "content-type": "image/jpeg" });
       return res.end(Buffer.from(person.image.bytes));
@@ -320,6 +326,42 @@ async function withBot(mode, steps) {
           },
           403,
         );
+      }
+      if (mode === "ikkitomon") {
+        const body = JSON.parse(raw.toString("utf8"));
+        const part = body.contents?.[0]?.parts?.find((p) => p.inlineData);
+        const bytes = Buffer.from(part.inlineData.data, "base64");
+        const front = bytes.length === idFront.image.bytes.length;
+        geminiHits.push(front ? "old tomoni" : "orqa tomoni");
+        return send({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      mrz_lines: front ? [] : idCard.mrz,
+                      issue_date: null,
+                      place_of_birth: null,
+                      authority: null,
+                      document_kind: "id_card",
+                      id_side: front ? "front" : "back",
+                      mrz_readable: !front,
+                      problem: front ? "old tomoni" : null,
+                      visa_type: null,
+                      document_box: null,
+                      document_quad: null,
+                      rotation: 0,
+                    }),
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 },
+        });
       }
       if (mode === "idzoom") {
         const body = JSON.parse(raw.toString("utf8"));
@@ -973,6 +1015,46 @@ async function idKartaYaqindan() {
   });
 }
 
+// ───────── 8. ID kartaning IKKALA tomoni birga yuborilsa ─────────
+
+async function idIkkiTomon() {
+  console.log("\n8) ID kartaning ikkala tomoni — bitta hujjat, xatosiz");
+  await withBot("ikkitomon", async (bot) => {
+    // Xodim doim shunday qiladi: avval old tomoni, keyin orqasi
+    bot.photo(idFront, "albom-2tomon");
+    bot.photo(idCard, "albom-2tomon");
+
+    const picked = await bot.wait(
+      "to'plam tugmalari",
+      (c) => c.method === "sendMessage" && c.body.reply_markup?.inline_keyboard,
+    );
+    const report = bot.reports();
+
+    check("Hujjat o'qildi", /XOLIQOV/.test(report), (report.match(/✅.*/) ?? [""])[0].slice(0, 60));
+    check(
+      "Old tomoni XATO deb ko'rsatilmaydi",
+      !/O'qilmadi/.test(report),
+      "xodim nimadir buzilgan deb o'ylamaydi",
+    );
+    check(
+      "Old tomoni izoh bo'lib chiqadi",
+      /ikkinchi tomoni/.test(report),
+      (report.match(/ℹ️.*/) ?? [""])[0].slice(0, 60),
+    );
+
+    const id = picked.body.reply_markup.inline_keyboard[0][0].callback_data.split(":")[1];
+    bot.button(`zip:${id}`);
+    const zip = await bot.wait(
+      "zip arxivi",
+      (c) => c.method === "sendDocument" && c.body.name.endsWith(".zip"),
+    );
+    check(
+      "Arxivda bitta hujjat bor",
+      zipNames(bot.file(zip.body.name)).some((n) => n.endsWith(idCard.file)),
+    );
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -1022,6 +1104,7 @@ try {
   await idKartaOldTomoni();
   await idKartaOrqaXira();
   await idKartaYaqindan();
+  await idIkkiTomon();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

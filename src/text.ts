@@ -351,6 +351,16 @@ export const t = {
       `Rasm fayllari papkada ham turadi: \`${config.photosDir}\``,
     ].join("\n"),
 
+  /**
+   * ID kartaning ikkinchi tomoni — xato emas, izoh.
+   *
+   * Xodim kartaning ikkala tomonini yuboradi (konsullikka ikkalasi
+   * kerak). Old tomonida MRZ yo'q, lekin ma'lumot orqasidan o'qilgan —
+   * ya'ni hammasi joyida, qayta suratga olish shart emas.
+   */
+  idOtherSide: (index: number) =>
+    `ℹ️ ${index}-rasm — ID kartaning ikkinchi tomoni (ma'lumot MRZ'dan o'qildi)`,
+
   failLine: (index: number, why: string) => `❌ ${index}-rasm — ${why}`,
 
   // --- To'plam hisoboti ---
@@ -358,6 +368,13 @@ export const t = {
   batchReport: (parts: {
     ok: string[];
     failed: string[];
+    /** Xato emas, izoh: masalan ID kartaning ikkinchi tomoni */
+    notes?: string[];
+    /**
+     * Tashxis qatorlari: model hujjatni qanday belgilagani va nechta MRZ
+     * qatori bergani. Hujjat ma'lumoti yo'q — faqat turi va soni.
+     */
+    diagnostics?: string[];
     warnings: string[];
     visaOk?: string[];
     visaProblems?: string[];
@@ -417,6 +434,18 @@ export const t = {
         `*O'qilmadi (${parts.failed.length}) — qaytadan suratga oling:*`,
         ...parts.failed,
       );
+      // Tashxis: nima bo'lganini aniq bilish uchun. Ism, raqam va matn
+      // chiqmaydi — faqat hujjat turi va qatorlar soni
+      const diagnostics = parts.diagnostics ?? [];
+      if (diagnostics.length > 0) {
+        out.push("", `_Tashxis: ${diagnostics.join("; ")}._`);
+      }
+    }
+
+    // Izohlar: xato emas, lekin xodim bilishi kerak
+    const notes = parts.notes ?? [];
+    if (notes.length > 0) {
+      out.push("", ...notes);
     }
 
     // Rasm saqlanmasa, arxivda ham bo'lmaydi — xodim buni bilishi kerak

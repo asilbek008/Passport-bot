@@ -1746,3 +1746,82 @@ test("ikkinchi urinish ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
   assert.equal(store.count(), 0);
   store.close();
 });
+
+// ───────────── ID kartaning ikki tomoni — bitta hujjat ─────────────
+//
+// Egasining holati: xodim ID kartaning old tomonini ham, orqasini ham
+// yuboradi (konsullikka ikkalasi kerak). Old tomonida MRZ yo'q, shuning
+// uchun u "o'qilmadi" bo'lib chiqardi va xodim nimadir buzilgan deb
+// o'ylardi.
+
+/** O'zbekiston ID kartasi (TD1) MRZ'si. */
+function td1(p: {
+  surname: string;
+  given: string;
+  docNumber: string;
+  pinfl: string;
+  birth: string;
+  sex: string;
+  expiry: string;
+}): string {
+  const l1 = `I<UZB${p.docNumber}${checkDigit(p.docNumber)}${p.pinfl}`.padEnd(30, "<");
+  let l2 =
+    `${p.birth}${checkDigit(p.birth)}${p.sex}${p.expiry}${checkDigit(p.expiry)}UZB` +
+    "UZB<<<<<<<<";
+  l2 += checkDigit(l1.slice(5, 30) + l2.slice(0, 7) + l2.slice(8, 15) + l2.slice(18, 29));
+  return [l1, l2, `${p.surname}<<${p.given}`.padEnd(30, "<")].join("\n");
+}
+
+test("ID kartaning old tomoni xato emas — orqasi o'qilgan bo'lsa", async () => {
+  const mrz = td1({
+    surname: "BOYQOBILOV", given: "ASILBEK", docNumber: "AD9614908",
+    pinfl: "51008086250058", birth: "080810", sex: "M", expiry: "341128",
+  });
+
+  const { deps, edits, store } = makeDeps({
+    // 1-rasm: old tomoni — MRZ yo'q
+    f1: {
+      ok: false,
+      reason: "unreadable",
+      problem: "MRZ ko'rinmadi",
+      noMrz: true,
+    },
+    // 2-rasm: orqa tomoni — o'qildi
+    f2: okResult(mrz),
+  });
+
+  await processBatch(OPERATOR, ["f1", "f2"], deps as never);
+
+  const report = edits.map((e) => e.text).join("\n");
+  assert.equal(store.count(), 1);
+  assert.equal(store.all()[0].doc_kind, "id");
+  assert.doesNotMatch(
+    report,
+    /O'qilmadi/,
+    "ikkinchi tomoni xato ro'yxatiga tushmasligi kerak",
+  );
+  assert.match(report, /ikkinchi tomoni/, "izoh sifatida ko'rsatilsin");
+  store.close();
+});
+
+test("ID karta o'qilmagan bo'lsa, MRZ'siz rasm xato bo'lib qoladi", async () => {
+  // Faqat old tomonini yuborgan: bu haqiqatan nosozlik, aytilishi kerak
+  const { deps, edits, store } = makeDeps({
+    f1: {
+      ok: false,
+      reason: "unreadable",
+      problem: "MRZ ko'rinmadi",
+      noMrz: true,
+      diag: "turi: id_card/front, MRZ qatori: 0",
+    },
+  });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  const report = edits.map((e) => e.text).join("\n");
+  assert.match(report, /O'qilmadi \(1\)/);
+  assert.match(report, /ORQA tomonini oling/);
+  assert.match(report, /Tashxis: 1-rasm — turi: id_card\/front, MRZ qatori: 0/);
+  assert.equal(store.count(), 0);
+  store.close();
+});
