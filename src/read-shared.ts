@@ -169,6 +169,31 @@ JAVOB SHAKLI: faqat JSON obyekt, boshqa hech qanday matn yoki izohsiz:
 
 export const USER_PROMPT = "Bu hujjatning MRZ qatorlarini ko'chirib yoz.";
 
+/** Qaysi ko'rinishdagi rasm yuborilayotgani. */
+export type ReadHint = "mrz_strip" | undefined;
+
+/**
+ * MRZ ZONASINING yaqin surati uchun topshiriq.
+ *
+ * Nega alohida: tasmada hujjatning o'zi ko'rinmaydi — faqat ikki-uch
+ * qator yozuv. Oddiy topshiriq bilan model buni "hujjat emas" deb
+ * belgilab qo'yishi mumkin va javob yo'qoladi.
+ */
+export const USER_PROMPT_STRIP = [
+  "Bu rasm — hujjatning PASTKI QISMI, ya'ni MRZ zonasining yaqin surati.",
+  "Hujjatning o'zi (surat, gerb) bu yerda ko'rinmaydi — bu normal holat.",
+  "",
+  "Faqat shu qatorlarni belgima-belgi ko'chirib yoz. document_kind ni",
+  "qatorlarning shakli bo'yicha belgila: 2 qator x 44 belgi — 'passport',",
+  "3 qator x 30 belgi — 'id_card'. 'not_a_document' DEMA.",
+  "document_box, document_quad va rotation kerak emas (null yoki 0).",
+].join("\n");
+
+/** Topshiriq matnini tanlaydi. */
+export function promptFor(hint: ReadHint): string {
+  return hint === "mrz_strip" ? USER_PROMPT_STRIP : USER_PROMPT;
+}
+
 export type ReadResult =
   | {
       ok: true;

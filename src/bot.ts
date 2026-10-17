@@ -21,7 +21,13 @@ import { parseVisaType, type VisaType } from "./visa.ts";
 import { withRetry } from "./throttle.ts";
 import { pickPhoto, documentFits } from "./image-pick.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
-import { cropToDocument, type Box, type Quad, type Rotation } from "./crop.ts";
+import {
+  cropToDocument,
+  quadBounds,
+  type Box,
+  type Quad,
+  type Rotation,
+} from "./crop.ts";
 import {
   savePhoto,
   deletePhoto,
@@ -1105,21 +1111,89 @@ async function closerLook(
 
   const box = keep.box;
   const quad = keep.quad;
-  if (!box && !quad) return keep; // qayerni kesishni bilmaymiz
 
+  // ── 2-urinish: hujjatning o'zi.
+  // Model hujjat qayerdaligini aytmagan bo'lsa, bu urinish o'tkazib
+  // yuboriladi — lekin MRZ tasmasi (3-urinish) baribir sinab ko'riladi:
+  // MRZ deyarli har doim kadrning pastki qismida bo'ladi.
   // Chet kengroq (6%): MRZ hujjatning eng chetida, kesib qo'ymaylik
-  const closer = cropToDocument(image, { box, quad, marginPct: 6 });
-  if (!closer.cropped) return keep;
+  const closer =
+    box || quad
+      ? cropToDocument(image, { box, quad, marginPct: 6 })
+      : { cropped: false as const, bytes: image.bytes };
+  if (closer.cropped) {
+    // Chegara shu yerda ham hisoblanadi: ikkinchi so'rov ham API
+    // chegarasiga kiradi
+    await deps.throttle?.wait();
+    const second = await deps.read({ bytes: closer.bytes, mime: "image/jpeg" }, now);
+    if (second.ok) return { result: second, zoomed: true, box, quad };
+  }
 
-  // Chegara shu yerda ham hisoblanadi: ikkinchi so'rov ham API chegarasiga
-  // kiradi
+  // ── 3-urinish: FAQAT MRZ TASMASI
+  //
+  // Pasport OCHIQ holda suratga olinsa (ikki sahifa ko'rinib tursa),
+  // hujjatning o'zi kadrning yarmi bo'ladi, MRZ esa uning pastki 5-10
+  // foizi. Hujjatga kesganda ham MRZ kichik qolaveradi — model rasmni
+  // o'z o'lchamiga kichraytirganda qatorlar o'qilmay qoladi.
+  //
+  // Shuning uchun oxirgi urinishda FAQAT MRZ zonasi — hujjatning pastki
+  // qismi — kesib yuboriladi: endi qatorlar butun rasmni egallaydi.
+  const strip = mrzStrip(box ?? (quad ? quadBounds(quad) : null), rotationOf(first));
+  if (!strip) return keep;
+
+  const cut = cropToDocument(image, {
+    box: strip.box,
+    rotation: strip.rotation,
+    marginPct: 2,
+    // Tasma keng va past: hujjat shakliga o'xshamaydi, shuning uchun
+    // odatdagi tekshiruvlarsiz kesiladi. Bu rasm faqat O'QISH uchun,
+    // arxivga tushmaydi
+    exact: true,
+  });
+  if (!cut.cropped) return keep;
+
   await deps.throttle?.wait();
-  const second = await deps.read({ bytes: closer.bytes, mime: "image/jpeg" }, now);
+  const third = await deps.read(
+    { bytes: cut.bytes, mime: "image/jpeg" },
+    now,
+    "mrz_strip",
+  );
+  return third.ok ? { result: third, zoomed: true, box, quad } : keep;
+}
 
-  // Ikkinchisi o'qigan bo'lsa shuni olamiz, aks holda birinchisi qoladi
-  return second.ok
-    ? { result: second, zoomed: true, box, quad }
-    : keep;
+/** Model aytgan burilish (nosozlikda ko'rsatilmaydi — 0 bo'ladi). */
+function rotationOf(result: ReadResult): Rotation {
+  return result.ok ? result.rotation : 0;
+}
+
+/**
+ * MRZ zonasi — hujjatning pastki qismi.
+ *
+ * MRZ har doim ma'lumot sahifasining ENG PASTIDA bo'ladi, shuning uchun
+ * chegaraning pastki 45 foizi olinadi (sahifa qiyshiq tursa ham sig'adi).
+ * Hujjat teskari turgan bo'lsa (180°) — yuqori qismi.
+ *
+ * Yonboshlagan rasmda (90/270) MRZ yon tomonda bo'ladi va bu oddiy
+ * hisob ishlamaydi: unda tasma olinmaydi.
+ */
+function mrzStrip(
+  box: Box | null,
+  rotation: Rotation,
+): { box: Box; rotation: Rotation } | null {
+  if (rotation === 90 || rotation === 270) return null;
+  // Chegara yo'q bo'lsa butun kadrni olamiz: MRZ odatda pastda
+  const area = box ?? { x0: 0, y0: 0, x1: 1000, y1: 1000 };
+  const height = area.y1 - area.y0;
+  if (height < 100) return null;
+
+  const cut = height * 0.45;
+  return {
+    box:
+      rotation === 180
+        ? { ...area, y1: area.y0 + cut }
+        : { ...area, y0: area.y1 - cut },
+    rotation,
+  };
 }
 
 /**

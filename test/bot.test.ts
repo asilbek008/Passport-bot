@@ -215,7 +215,10 @@ function makeDeps(
   };
   /** Har rasm bo'yicha nechta so'rov ketdi — qayta urinishni sanash uchun */
   const calls: Record<string, number> = {};
-  deps.read = (async () => {
+  /** Modelga yuborilgan rasmlar — qaysi ko'rinishda ketgani uchun */
+  const images: { bytes: Uint8Array; mime: string }[] = [];
+  deps.read = (async (image: { bytes: Uint8Array; mime: string }) => {
+    if (image?.bytes) images.push(image);
     const setting = reads[currentFile];
     if (!setting) throw new Error(`test sozlanmagan: ${currentFile}`);
     const seen = calls[currentFile] ?? 0;
@@ -239,7 +242,7 @@ function makeDeps(
     minutes: 60,
   });
 
-  return { deps, sent, edits, documents, queued, store, invites, calls };
+  return { deps, sent, edits, documents, queued, store, invites, calls, images };
 }
 
 const photoUpdate = (chatId: number, fileId: string): TgUpdate => ({
@@ -1706,22 +1709,32 @@ test("ID kartaning old tomonida qayta urinilmaydi — bekorga pul ketmasin", asy
   store.close();
 });
 
-test("chegara aytilmagan bo'lsa qayta urinilmaydi", async () => {
-  // Qayerni kesishni bilmaymiz — bekorga so'rov yubormaymiz
+test("chegara aytilmagan bo'lsa ham MRZ tasmasi sinab ko'riladi", async () => {
+  // Model hujjat qayerdaligini aytmasa, hujjatga kesib bo'lmaydi. Lekin
+  // MRZ deyarli har doim kadrning pastki qismida bo'ladi — shuning uchun
+  // tasma baribir yuboriladi. Egasining ochiq pasport rasmlarida model
+  // chegarani aytmasligi mumkin, shunda ham o'qilishi kerak
+  const { decode } = await import("jpeg-js");
   const source = await smallDocumentJpeg();
-  const { deps, store, calls } = makeDeps(
+  const { deps, store, calls, images } = makeDeps(
     { f1: [{ ok: false, reason: "unreadable", problem: "xira" }] },
     source,
   );
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  assert.equal(calls.f1, 1);
+  assert.equal(calls.f1, 2, "asl rasm va MRZ tasmasi");
+  const strip = decode(images[1].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  const full = decode(images[0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  assert.ok(
+    strip.height < full.height * 0.6 && strip.width / strip.height > 1.5,
+    `tasma keng va past bo'lsin: ${strip.width}x${strip.height}`,
+  );
   assert.equal(store.count(), 0);
   store.close();
 });
 
-test("ikkinchi urinish ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
+test("qayta urinishlar ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
   const source = await smallDocumentJpeg();
   const { deps, edits, store, calls } = makeDeps(
     {
@@ -1740,7 +1753,9 @@ test("ikkinchi urinish ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  assert.equal(calls.f1, 2);
+  // Hujjatga kesib, keyin MRZ tasmasini ham yuboradi — ikkisi ham
+  // o'qimasa, xodimga BIRINCHI urinishning aniq sababi aytiladi
+  assert.equal(calls.f1, 3);
   const report = edits.map((e) => e.text).join("\n");
   assert.match(report, /yaqinroqdan/, "birinchi urinishning aniq sababi qolsin");
   assert.equal(store.count(), 0);
@@ -1824,4 +1839,99 @@ test("ID karta o'qilmagan bo'lsa, MRZ'siz rasm xato bo'lib qoladi", async () => 
   assert.match(report, /Tashxis: 1-rasm — turi: id_card\/front, MRZ qatori: 0/);
   assert.equal(store.count(), 0);
   store.close();
+});
+
+// ───────── Uchinchi urinish: faqat MRZ tasmasi ─────────
+//
+// Egasining holati: pasport OCHIQ holda, ikki sahifa ko'rinib turgan
+// qilib suratga olingan. Hujjatning o'zi kadrning yarmi, MRZ esa uning
+// pastki 5-10 foizi. Model rasmni kichraytirganda o'sha qatorlar
+// o'qilmas bo'lib qoladi — hujjatga kesganda ham kichik qolaveradi.
+// Oxirgi urinishda faqat MRZ zonasi kesib yuboriladi.
+
+test("hujjatga kesish yordam bermasa, faqat MRZ tasmasi yuboriladi", async () => {
+  const { encode, decode } = await import("jpeg-js");
+  const mrz = td3({
+    surname: "TASMAYEV", given: "BOBUR", docNumber: "FB1212121",
+    birth: "800101", sex: "M", expiry: "350101",
+  });
+
+  // Ochiq pasport: hujjat kadrning o'rtasida, keng va baland
+  const width = 1400;
+  const height = 1000;
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const inDoc =
+        x > width * 0.15 && x < width * 0.85 && y > height * 0.2 && y < height * 0.9;
+      data[i] = inDoc ? 240 : 80;
+      data[i + 1] = inDoc ? 232 : 82;
+      data[i + 2] = inDoc ? 215 : 86;
+      data[i + 3] = 255;
+    }
+  }
+  const source = new Uint8Array(encode({ data, width, height }, 92).data);
+
+  const fail = {
+    ok: false as const,
+    reason: "unreadable" as const,
+    problem: "MRZ mayda chiqdi",
+    box: { x0: 150, y0: 200, x1: 850, y1: 900 },
+  };
+
+  const { deps, store, calls, images, edits } = makeDeps(
+    // 1: asl rasm — o'qilmadi, 2: hujjatga kesilgan — ham o'qilmadi,
+    // 3: MRZ tasmasi — o'qildi
+    { f1: [fail, fail, okResult(mrz)] },
+    source,
+  );
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 3, "uchta urinish bo'lishi kerak");
+  assert.equal(store.count(), 1, "uchinchi urinishda o'qilgani saqlansin");
+  assert.equal(store.all()[0].surname, "TASMAYEV");
+
+  // Uchinchi rasm — keng va past tasma bo'lishi kerak
+  assert.equal(images.length, 3);
+  const second = decode(images[1].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  const third = decode(images[2].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  assert.ok(
+    third.height < second.height / 1.8,
+    `tasma hujjatdan ancha past bo'lsin: ${second.height} → ${third.height}`,
+  );
+  assert.ok(
+    third.width / third.height > 1.5,
+    `tasma keng bo'lsin: ${third.width}x${third.height}`,
+  );
+
+  assert.match(edits.map((e) => e.text).join("\n"), /yaqindan qayta o'qildi/);
+  store.close();
+});
+
+test("yonboshlagan rasmda tasma olinmaydi — MRZ pastda bo'lmaydi", async () => {
+  const { encode } = await import("jpeg-js");
+  const width = 900;
+  const height = 1200;
+  const data = new Uint8Array(width * height * 4).fill(200);
+  for (let i = 3; i < data.length; i += 4) data[i] = 255;
+  const source = new Uint8Array(encode({ data, width, height }, 92).data);
+
+  const { deps, calls } = makeDeps(
+    {
+      f1: [
+        {
+          ok: false,
+          reason: "unreadable",
+          problem: "xira",
+          box: { x0: 100, y0: 100, x1: 900, y1: 900 },
+        },
+      ],
+    },
+    source,
+  );
+  // Burilgan rasm: model 90 daraja deb aytgan bo'lsa, MRZ yon tomonda
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  assert.ok(calls.f1 <= 3, `ortiqcha so'rov bo'lmasin: ${calls.f1}`);
 });

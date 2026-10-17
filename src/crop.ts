@@ -910,6 +910,15 @@ export type CropResult = {
 };
 
 export type CropOptions = {
+  /**
+   * Berilgan chegarani AYNAN kesadi: shakl tekshiruvlari, piksel
+   * aniqlashtirishi va "ikki dalil" qoidasi ishlatilmaydi.
+   *
+   * Faqat ICHKI maqsad uchun: MRZ tasmasini (keng va past) modelga
+   * yaqindan ko'rsatish. Arxivga tushadigan rasm hech qachon shu
+   * usulda kesilmaydi — u yerda hujjatning butunligi kafolati kerak.
+   */
+  exact?: boolean;
   /** Hujjatning to'rt burchagi — bo'lsa shu ishlatiladi */
   quad?: Quad | null;
   /** To'rtburchak chegara — burchaklar bo'lmaganda yoki ishonchsiz bo'lganda */
@@ -931,7 +940,13 @@ export function cropToDocument(
   image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
   options: CropOptions = {},
 ): CropResult {
-  const { quad = null, box = null, marginPct = 0, rotation = 0 } = options;
+  const {
+    quad = null,
+    box = null,
+    marginPct = 0,
+    rotation = 0,
+    exact = false,
+  } = options;
   const keep: CropResult = {
     bytes: image.bytes,
     cropped: false,
@@ -957,6 +972,27 @@ export function cropToDocument(
 
     const width = raw.width;
     const height = raw.height;
+
+    // AYNAN kesish: tekshiruvsiz. Faqat o'qish uchun ishlatiladi
+    if (exact && box) {
+      const rect = toPixels(expandRelative(box, marginPct), width, height);
+      // MRZ tasmasi past bo'ladi, shuning uchun chegara kichikroq
+      if (rect.w < 60 || rect.h < 24) return keep;
+      const cut = cutPixels(raw.data, width, rect);
+      const turned = rotatePixels(cut, rect.w, rect.h, rotation);
+      const jpeg = encode(
+        { data: turned.data, width: turned.width, height: turned.height },
+        QUALITY,
+      );
+      return {
+        bytes: new Uint8Array(jpeg.data) as Uint8Array<ArrayBuffer>,
+        cropped: true,
+        turned: rotation,
+        mode: "box",
+        lowRes: false,
+      };
+    }
+
     const small = toSmallColor(raw.data, width, height);
 
     // ── 1-usul: perspektiva to'g'rilash (qo'lda ushlangan, qiyshiq rasm)

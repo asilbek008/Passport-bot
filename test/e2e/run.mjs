@@ -327,6 +327,45 @@ async function withBot(mode, steps) {
           403,
         );
       }
+      if (mode === "tasma") {
+        // Ochiq pasport: MRZ faqat TASMA ko'rinishida o'qiladi.
+        // Tasma — keng va past rasm, shundan ajratamiz
+        const body = JSON.parse(raw.toString("utf8"));
+        const part = body.contents?.[0]?.parts?.find((p) => p.inlineData);
+        const bytes = Buffer.from(part.inlineData.data, "base64");
+        const img = jpeg.decode(bytes, { useTArray: true });
+        const isStrip = img.width / img.height > 2.2;
+        geminiHits.push(isStrip ? `tasma ${img.width}x${img.height}` : `to'liq ${img.width}x${img.height}`);
+        return send({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      mrz_lines: isStrip ? people[0].mrz : [],
+                      issue_date: null,
+                      place_of_birth: null,
+                      authority: null,
+                      document_kind: "passport",
+                      id_side: null,
+                      mrz_readable: isStrip,
+                      problem: isStrip ? null : "MRZ qatorlari mayda chiqdi",
+                      visa_type: null,
+                      document_box: [250, 150, 900, 850],
+                      document_quad: null,
+                      rotation: 0,
+                    }),
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 },
+        });
+      }
       if (mode === "ikkitomon") {
         const body = JSON.parse(raw.toString("utf8"));
         const part = body.contents?.[0]?.parts?.find((p) => p.inlineData);
@@ -1055,6 +1094,28 @@ async function idIkkiTomon() {
   });
 }
 
+// ───── 9. Ochiq pasport: faqat MRZ tasmasi o'qiladi ─────
+
+async function ochiqPasport() {
+  console.log("\n9) Ochiq pasport — MRZ tasmasi kesib yuboriladi");
+  await withBot("tasma", async (bot) => {
+    bot.photo(people[0], "albom-tasma");
+    await bot.wait(
+      "to'plam tugmalari",
+      (c) => c.method === "sendMessage" && c.body.reply_markup?.inline_keyboard,
+      60_000,
+    );
+    const report = bot.reports();
+    check("Pasport o'qildi", /1 \/ 1 o'qildi/.test(report) && /BOYQOBILOV/.test(report));
+    check(
+      "Uchinchi urinishda MRZ tasmasi yuborildi",
+      bot.geminiHits.length === 3 && bot.geminiHits[2].startsWith("tasma"),
+      bot.geminiHits.join(" → "),
+    );
+    check("Hisobotda yaqindan o'qilgani aytildi", /yaqindan qayta o'qildi/.test(report));
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -1105,6 +1166,7 @@ try {
   await idKartaOrqaXira();
   await idKartaYaqindan();
   await idIkkiTomon();
+  await ochiqPasport();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

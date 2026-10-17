@@ -405,6 +405,16 @@ butun kadrni egallaydi va MRZ bir necha barobar yirik bo'ladi. Hisobotda
 "N tasi yaqindan qayta o'qildi" deb aytiladi — xodim keyingi safar
 hujjatni kadrga to'ldirib oladi.
 
+**Uchinchi urinish: faqat MRZ tasmasi.** Pasport OCHIQ holda suratga
+olinsa (ikki sahifa ko'rinib tursa), hujjatning o'zi kadrning yarmi
+bo'ladi, MRZ esa uning pastki 5-10 foizi — hujjatga kesganda ham MRZ
+kichik qolaveradi. Shuning uchun oxirgi urinishda **faqat MRZ zonasi**
+(hujjatning pastki 45 foizi) kesib yuboriladi: endi qatorlar butun
+rasmni egallaydi. Modelga bu rasm MRZ zonasining yaqin surati ekani
+aytiladi, aks holda u "hujjat emas" deb belgilab qo'yardi. Model hujjat
+chegarasini umuman aytmagan bo'lsa ham tasma sinab ko'riladi — MRZ
+deyarli har doim kadrning pastki qismida bo'ladi.
+
 Qayta urinish faqat "ko'rinmadi" turidagi sabablarda bo'ladi. ID
 kartaning **old tomoni** yuborilgan bo'lsa yoki rasmda hujjat umuman
 bo'lmasa, qayta so'ralmaydi — yaqindan qarash yordam bermaydi, bekorga
@@ -700,8 +710,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 327 test — bo'laklar alohida
-npm run sinov    # 38 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 329 test — bo'laklar alohida
+npm run sinov    # 41 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -720,7 +730,7 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan sakkiz holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan to'qqiz holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
@@ -729,7 +739,8 @@ kartaning old tomoni yuborilganda orqa tomonini olish aytilishi, orqa
 tomoni xira bo'lganda «teskari qiling» deyilmasligi, va kadrda kichik
 ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi, va
 ID kartaning ikkala tomoni birga yuborilganda bitta hujjat bo'lib,
-xatosiz chiqishi.
+xatosiz chiqishi, va ochiq pasportda MRZ faqat tasma ko'rinishida
+o'qilishi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

@@ -16,7 +16,13 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config.ts";
-import { SYSTEM, USER_PROMPT, interpret, normalizeMime } from "./read-shared.ts";
+import {
+  SYSTEM,
+  promptFor,
+  interpret,
+  normalizeMime,
+  type ReadHint,
+} from "./read-shared.ts";
 import type { ReadResult } from "./read-shared.ts";
 
 // Eski import yo'llari buzilmasligi uchun qayta eksport qilinadi
@@ -35,6 +41,7 @@ function getClient(): Anthropic {
 export async function readDocument(
   image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
   today = new Date(),
+  hint?: ReadHint,
 ): Promise<ReadResult> {
   let response: Anthropic.Message;
   try {
@@ -54,7 +61,7 @@ export async function readDocument(
                 data: Buffer.from(image.bytes).toString("base64"),
               },
             },
-            { type: "text", text: USER_PROMPT },
+            { type: "text", text: promptFor(hint) },
           ],
         },
       ],

@@ -13,21 +13,26 @@
  */
 
 import { config } from "./config.ts";
-import type { ReadResult } from "./read-shared.ts";
+import type { ReadResult, ReadHint } from "./read-shared.ts";
 
-export type { ReadResult } from "./read-shared.ts";
+export type { ReadResult, ReadHint } from "./read-shared.ts";
 
 /** Rasmdan hujjat ma'lumotini o'qiydi. Provayder sozlamadan olinadi. */
 export async function readDocument(
   image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
   today = new Date(),
+  /**
+   * Rasm qanday ko'rinishda: `mrz_strip` — faqat MRZ zonasining yaqin
+   * surati (hujjatning o'zi ko'rinmaydi), shuning uchun topshiriq boshqa.
+   */
+  hint?: ReadHint,
 ): Promise<ReadResult> {
   if (config.provider === "gemini") {
     const { readWithGemini } = await import("./vision-gemini.ts");
-    return readWithGemini(image, today);
+    return readWithGemini(image, today, hint);
   }
   const { readDocument: readWithAnthropic } = await import("./vision.ts");
-  return readWithAnthropic(image, today);
+  return readWithAnthropic(image, today, hint);
 }
 
 /** Hozirgi provayder haqida qisqa ma'lumot — ishga tushirishda ko'rsatiladi. */

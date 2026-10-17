@@ -19,10 +19,11 @@ import { GoogleGenAI } from "@google/genai";
 import { config } from "./config.ts";
 import {
   SYSTEM,
-  USER_PROMPT,
+  promptFor,
   interpret,
   normalizeMime,
   type ReadResult,
+  type ReadHint,
 } from "./read-shared.ts";
 
 /**
@@ -37,6 +38,7 @@ function getClient(): GoogleGenAI {
 export async function readWithGemini(
   image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
   today = new Date(),
+  hint?: ReadHint,
 ): Promise<ReadResult> {
   let text: string;
   try {
@@ -52,7 +54,7 @@ export async function readWithGemini(
                 data: Buffer.from(image.bytes).toString("base64"),
               },
             },
-            { text: USER_PROMPT },
+            { text: promptFor(hint) },
           ],
         },
       ],
