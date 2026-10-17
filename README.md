@@ -685,6 +685,8 @@ windows/
   2-boshlash.bat    ishga tushirish, o'zi qayta ko'tariladi
   3-avtomatik.bat   kompyuterga kirganda avtomatik ishga tushirish
   4-zaxira.bat      zaxira olish
+  5-yangilash.bat   GitHub'dan yangilash; fayllar aralashsa - ishlaydigan
+                    holatga qaytarish (.env va data tegilmaydi)
 ```
 
 Tekshirish:
@@ -738,6 +740,31 @@ tugma yuboradi, bosganingizda "Tugma ishladi" deb javob beradi.
   ikki marta tashlasa ham ro'yxat ikkilanmaydi — eski yozuv yangilanadi.
 
 ---
+
+## Fayllar aralashib ketgan bo'lsa
+
+Kodni tahrirlab, nima o'zgarganini unutib qo'ysangiz yoki papkada
+tushunarsiz xatolar chiqsa — **tuzatib o'tirish shart emas.** Ishlaydigan
+kod GitHub'da turadi:
+
+```
+windows\5-yangilash.bat
+```
+
+U o'zgargan fayllarni ko'rsatadi, nusxasini `eski-nusxa` papkasiga
+qo'yadi va hammasini GitHub'dagi holatga qaytaradi, keyin paketlarni
+o'rnatib testlarni ishga tushiradi.
+
+**Sozlamalaringiz (`.env`) va bazangiz (`data`) tegilmaydi** — ular
+git'da yo'q, faqat shu kompyuterda turadi. (`git clean` e'tiborsiz
+fayllarni o'chirmaydi; `eski-nusxa` ham shu sababdan `.gitignore` da.)
+
+Terminal bilan xuddi shu ish:
+
+```bash
+git fetch origin && git reset --hard origin/main && git clean -fd
+npm install
+```
 
 ## Nimadir ishlamasa — birinchi navbatda
 

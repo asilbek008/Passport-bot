@@ -10,6 +10,11 @@ data/
 zaxira/
 *.umz
 
+# 5-yangilash.bat tiklashdan oldin shu yerga nusxa qo'yadi.
+# E'tiborsiz bo'lishi SHART: aks holda `git clean` uni ham o'chirib
+# yuboradi va nusxa saqlashdan ma'no qolmaydi.
+eski-nusxa/
+
 # Bot qulfi va jurnallar
 *.lock
 logs/
