@@ -30,7 +30,7 @@ import {
   photoPath,
 } from "./photos.ts";
 import type { Store, Pilgrim } from "./store.ts";
-import type { Telegram, TgUpdate } from "./telegram.ts";
+import { Telegram, type TgUpdate, type Button } from "./telegram.ts";
 import type { readDocument } from "./vision.ts";
 
 export type Deps = {
@@ -84,6 +84,25 @@ const ARCHIVE_FOLDER = "umra-pasportlar";
 /** `/royxat` da nechta kishi ko'rsatiladi. Qolgani Excelda. */
 const LIST_LIMIT = 40;
 
+/**
+ * To'plam ostidagi tugmalar.
+ *
+ * Egasining talabi: fayllar o'zi kelmasin — xodim nima kerakligini
+ * O'ZI tanlasin. Avval Excel ham, arxiv ham avtomatik yuborilardi;
+ * ko'pincha ikkalasi ham kerak bo'lmaydi va suhbat keraksiz fayl
+ * bilan to'lib ketardi.
+ *
+ * `data` — 64 baytgacha. Shuning uchun u yerda faqat amal nomi va
+ * to'plam raqami turadi, pasport raqamlari esa bazada (`batches`).
+ */
+function batchButtons(batchId: number): Button[] {
+  return [
+    { text: t.buttons.zip, data: `zip:${batchId}` },
+    { text: t.buttons.excel, data: `excel:${batchId}` },
+    { text: t.buttons.kinds, data: `farq:${batchId}` },
+  ];
+}
+
 /** Telegram xabar chegarasini hisobga olib yuboradi. */
 async function reply(tg: Telegram, chatId: number, text: string): Promise<void> {
   for (const part of splitMessage(text)) {
@@ -92,6 +111,11 @@ async function reply(tg: Telegram, chatId: number, text: string): Promise<void> 
 }
 
 export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> {
+  if (update.callback_query) {
+    await handleCallback(update.callback_query, deps);
+    return;
+  }
+
   const msg = update.message;
   if (!msg) return;
 
@@ -141,6 +165,68 @@ export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> 
 
   if (!raw.startsWith("/")) {
     await deps.tg.sendMessage(chatId, t.sendPhoto);
+  }
+}
+
+/**
+ * Tugma bosilganda.
+ *
+ * Telegram tugmani bosgan odamni alohida yuboradi, ya'ni oq ro'yxat
+ * BU YERDA HAM tekshirilishi kerak: tugmali xabar boshqa odamga
+ * ko'chirilsa, u ham bosa oladi.
+ */
+async function handleCallback(
+  query: NonNullable<TgUpdate["callback_query"]>,
+  deps: Deps,
+): Promise<void> {
+  const chatId = query.message?.chat.id ?? query.from.id;
+
+  // Aylanuvchi belgini darhol to'xtatamiz — ish uzoq davom etishi mumkin
+  await deps.tg.answerCallback(query.id);
+
+  if (!allowed(chatId, deps.store)) {
+    await deps.tg.sendMessage(chatId, t.notOperator);
+    return;
+  }
+
+  const [action, raw] = (query.data ?? "").split(":");
+  const batchId = Number(raw);
+  if (!action || !Number.isInteger(batchId)) return;
+
+  const docNumbers = deps.store.batch(batchId, chatId);
+  // Bot qayta ishga tushgan yoki to'plam eskirgan bo'lishi mumkin
+  if (!docNumbers) {
+    await reply(deps.tg, chatId, t.batchExpired);
+    return;
+  }
+
+  const rows = deps.store.byDocNumbers(docNumbers);
+  if (rows.length === 0) {
+    await reply(deps.tg, chatId, t.batchExpired);
+    return;
+  }
+
+  const now = deps.now?.() ?? new Date();
+
+  try {
+    switch (action) {
+      case "zip":
+        await sendArchive(chatId, rows, deps, now);
+        return;
+      case "excel":
+        await sendWorkbook(chatId, rows, deps, now);
+        return;
+      case "farq":
+        await reply(deps.tg, chatId, t.docKinds(rows));
+        return;
+    }
+  } catch (err) {
+    // Ma'lumot joyida, faqat fayl ketmadi. Tugmalar qolgani uchun
+    // xodim qayta bosa oladi — shuni aytamiz.
+    console.error(
+      `[tugma] ${action} bajarilmadi: ${err instanceof Error ? err.message : "noma'lum"}`,
+    );
+    await reply(deps.tg, chatId, t.filesFailed);
   }
 }
 
@@ -742,18 +828,21 @@ export async function processBatch(
     await tg.sendMessage(chatId, part);
   }
 
-  // Hisobotdan keyin fayllar — so'ralmasdan. Xodimning ishi shu bilan tugaydi.
   if (batchRows.length === 0) return;
-  try {
-    await sendWorkbook(chatId, batchRows, deps, now);
-    await sendArchive(chatId, batchRows, deps, now);
-  } catch (err) {
-    // Ma'lumot saqlangan, faqat fayl ketmadi — qo'lda olish mumkin
-    console.error(
-      `[fayl] yuborilmadi: ${err instanceof Error ? err.message : "noma'lum"}`,
-    );
-    await tg.sendMessage(chatId, t.filesFailed);
-  }
+
+  // Fayllar AVTOMATIK yuborilmaydi: xodim tugmalardan o'zi tanlaydi.
+  // To'plam bazaga yoziladi, chunki tugmaning `data` si 64 baytgacha va
+  // 30 ta pasport raqami u yerga sig'maydi.
+  const batchId = store.saveBatch(
+    chatId,
+    batchRows.map((p) => p.doc_number),
+  );
+
+  // Tugmalar hisobotning OXIRGI bo'lagi ostida turadi — uzun hisobot
+  // bo'linganda ular ko'rinmay qolmasligi uchun
+  await tg.sendMessage(chatId, t.pickAction(batchRows.length), {
+    reply_markup: Telegram.keyboard(batchButtons(batchId)),
+  });
 }
 
 type Outcome =

@@ -137,6 +137,19 @@ export class Store {
         primary key (chat_id, day)
       );
 
+      -- O'qilgan to'plamlar: tugma bosilganda qaysi pasportlar
+      -- haqida ekanini bilish uchun.
+      --
+      -- Tugmaning callback_data si 64 baytgacha, ya'ni 30 ta pasport
+      -- raqami u yerga sig'maydi. Shuning uchun to'plam shu yerda
+      -- saqlanadi, tugmada esa faqat uning raqami turadi.
+      create table if not exists batches (
+        id integer primary key autoincrement,
+        chat_id integer not null,
+        doc_numbers text not null,
+        at text not null default (datetime('now'))
+      );
+
       -- Kim qachon eksport qilgani (ma'lumot kimga ketganini bilish uchun)
       create table if not exists exports (
         id integer primary key autoincrement,
@@ -416,6 +429,43 @@ export class Store {
          order by surname, given_names`,
       )
       .all() as unknown as Pilgrim[];
+  }
+
+  // --- O'qilgan to'plamlar ---
+
+  /** To'plamni saqlaydi va raqamini qaytaradi (tugma uchun). */
+  saveBatch(chatId: number, docNumbers: string[]): number {
+    const info = this.db
+      .prepare("insert into batches (chat_id, doc_numbers) values (?, ?)")
+      .run(chatId, JSON.stringify(docNumbers));
+    return Number(info.lastInsertRowid);
+  }
+
+  /**
+   * To'plamdagi pasport raqamlari. Topilmasa `null`.
+   *
+   * `chatId` ham tekshiriladi: boshqa xodimning to'plamini raqamini
+   * taxmin qilib ochib bo'lmasin.
+   */
+  batch(id: number, chatId: number): string[] | null {
+    const row = this.db
+      .prepare("select doc_numbers from batches where id = ? and chat_id = ?")
+      .get(id, chatId) as { doc_numbers: string } | undefined;
+    if (!row) return null;
+    try {
+      const parsed = JSON.parse(row.doc_numbers);
+      return Array.isArray(parsed) ? (parsed as string[]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Eski to'plamlarni tozalaydi — tugmalar baribir eskirib qoladi. */
+  purgeBatches(days = 30): number {
+    const info = this.db
+      .prepare(`delete from batches where at < datetime('now', ?)`)
+      .run(`-${days} days`);
+    return Number(info.changes);
   }
 
   /** Hamma yozuvning rasm nomlari (nom to'qnashuvini aniqlash uchun). */

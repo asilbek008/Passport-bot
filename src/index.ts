@@ -146,6 +146,8 @@ function schedulePurge() {
       const removed = store.purge();
       // Yozuv bilan birga rasmi ham o'chadi — saqlash muddati siyosati
       const photos = deletePhotos(removed.photos);
+      // Eski to'plamlar ham: ularning tugmalari baribir eskirgan
+      store.purgeBatches();
       if (removed.count > 0) {
         console.log(
           `[tozalash] ${removed.count} ta eski yozuv va ${photos} ta rasm o'chirildi`,

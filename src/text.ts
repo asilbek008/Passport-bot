@@ -101,16 +101,16 @@ export const t = {
     [
       "Assalomu alaykum. Pasport rasmlarini shu yerga yuboring.",
       "",
-      "Men har biridan ism-familiya va pasport ma'lumotini o'qib,",
-      "sizga ikkita fayl qaytaraman:",
+      "Men har biridan ism-familiya va pasport ma'lumotini o'qiyman,",
+      "keyin siz tugmalardan kerakligini tanlaysiz:",
       "",
-      "📊 *Excel jadval* — ism, familiya va pasport ma'lumotlari",
-      "🗂 *Arxiv (.zip)* — har pasportning rasmi, hujjatning o'ziga",
-      "qirqilgan, `FAMILIYA_ISM_turi.jpg` nomi bilan",
+      "🗂 *Zip qilib olish* — har pasportning rasmi, hujjatning o'ziga",
+      "qirqilgan, `ism_familiya_turi.jpg` nomi bilan",
+      "📊 *Excel qilib olish* — ism, familiya va pasport ma'lumotlari",
+      "🔍 *Pasport farqlash* — qaysi biri qizil pasport, qaysi biri ID",
       "",
       "Rasmlarni bittalab ham, bir necha o'nlabini birga (albom qilib)",
-      "ham yuborishingiz mumkin. Hammasi o'qilgach fayllar o'zi keladi —",
-      "boshqa hech narsa qilish kerak emas.",
+      "ham yuborishingiz mumkin.",
       "",
       saved > 0 ? `_Bazada ${saved} ta pasport bor._\n` : "",
       "Buyruqlar: /yordam",
@@ -123,10 +123,10 @@ export const t = {
       .replace(/\n{3,}/g, "\n\n"),
 
   help: [
-    "*Asosiy ish:* pasport rasmlarini yuborasiz — Excel jadval va .zip",
-    "arxiv o'zi keladi. Buyruq kerak emas.",
+    "*Asosiy ish:* pasport rasmlarini yuborasiz, keyin hisobot ostidagi",
+    "tugmalardan kerakligini tanlaysiz. Buyruq kerak emas.",
     "",
-    "*Fayllarni qayta olish:*",
+    "*Hamma yozuv bo'yicha:*",
     "`/royxat` — o'qilgan pasportlar ro'yxati",
     "`/excel` — hammasini bitta Excel jadval qilib olish",
     "`/zip` — hammasini rasmlar bilan arxiv qilib olish",
@@ -401,7 +401,6 @@ export const t = {
       ].filter(Boolean);
       out.push(
         "",
-        "📊 Excel jadval va 🗂 arxiv yuborilmoqda...",
         done.length > 0 ? `_${done.join(", ")}._` : "",
       );
     }
@@ -467,14 +466,66 @@ export const t = {
   notFound: (docNumber: string) => `\`${docNumber}\` topilmadi.`,
   needDocNumber: "Pasport raqamini yozing: `/ochir AB1234567`",
 
+  // --- Tugmalar ---
+
+  /** Tugmalar ustidagi qisqa qator. */
+  pickAction: (n: number) =>
+    n === 1
+      ? "*1 ta hujjat tayyor.* Nima kerak?"
+      : `*${n} ta hujjat tayyor.* Nima kerak?`,
+
+  buttons: {
+    zip: "🗂 Zip qilib olish",
+    excel: "📊 Excel qilib olish",
+    kinds: "🔍 Pasport farqlash",
+  },
+
+  /** Tugma eskirgan: bot qayta ishga tushgan yoki to'plam o'chirilgan. */
+  batchExpired: [
+    "Bu to'plam endi mavjud emas.",
+    "",
+    "Hammasini olish uchun: /excel yoki /zip",
+  ].join("\n"),
+
+  /**
+   * Hujjatlarni turi bo'yicha ajratib ko'rsatadi.
+   *
+   * Egasining so'rovi: "passport farqlash — id / zagran (qizil) /
+   * o'zbek / tojik / qirg'iz / qozoq". Tur MRZ'dan determinlashgan
+   * holda olingan, taxmin yo'q.
+   */
+  docKinds: (
+    rows: { doc_label: string; surname: string; given_names: string }[],
+  ) => {
+    const groups = new Map<string, string[]>();
+    for (const r of rows) {
+      const label = r.doc_label || "Noma'lum hujjat";
+      const list = groups.get(label) ?? [];
+      list.push(`${esc(r.surname)} ${esc(r.given_names)}`);
+      groups.set(label, list);
+    }
+
+    // Ko'p uchragani yuqorida — xodim asosiysini darhol ko'radi
+    const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+
+    const out: string[] = [`*Hujjat turlari* — ${rows.length} ta hujjat`, ""];
+    for (const [label, names] of sorted) {
+      out.push(`*${esc(label)}* — ${names.length} ta`);
+      for (const name of names) out.push(`  • ${name}`);
+      out.push("");
+    }
+    return out.join("\n").trimEnd();
+  },
+
   /**
    * Ma'lumot saqlandi, lekin fayl ketmadi (Telegram xatosi).
    * Xodim ishini yo'qotmasligi uchun qo'lda olish yo'li aytiladi.
    */
   filesFailed: [
-    "⚠️ Ma'lumot saqlandi, lekin faylni yuborib bo'lmadi.",
+    "⚠️ Faylni yuborib bo'lmadi.",
     "",
-    "Qayta urinib ko'ring: /excel va /zip",
+    "Ma'lumot joyida — tugmani qayta bosib ko'ring,",
+    "yoki /excel va /zip bilan hammasini oling.",
   ].join("\n"),
 
   purged: (n: number) =>

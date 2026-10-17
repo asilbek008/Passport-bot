@@ -38,8 +38,15 @@ export type DocumentType = {
   countryAdjective: string;
   /** To'liq nom: "O'zbek pasporti" */
   label: string;
-  /** Fayl nomi uchun qisqa kod: "uzb-pasport" */
-  slug: string;
+  /**
+   * Fayl nomidagi so'z: `qizil`, `id`, `tojik_pasport`.
+   *
+   * O'zbek hujjatlari uchun egasining so'zlari ishlatiladi: chet elga
+   * chiqish pasporti kundalik tilda "qizil pasport" deyiladi. Boshqa
+   * davlatlarda muqova rangini TAXMIN QILMAYMIZ (rang MRZ'da yo'q),
+   * shuning uchun davlat nomi + hujjat turi yoziladi.
+   */
+  fileWord: string;
 };
 
 const KIND_LABEL: Record<DocKind, string> = {
@@ -55,6 +62,25 @@ const KIND_SLUG: Record<DocKind, string> = {
   viza: "viza",
   boshqa: "hujjat",
 };
+
+/**
+ * Fayl nomidagi so'zni yasaydi.
+ *
+ * O'zbekistonniki — qisqa: `qizil` (chet elga chiqish pasporti) yoki `id`.
+ * Egasining talabi shunday: `asilbek_boyqobilov_qizil.jpg`.
+ *
+ * Boshqa davlatniki — davlat nomi bilan: `tojik_pasport`, `qirgiz_id`.
+ * Shunda tojik va o'zbek pasportlari bir xil nomli odamda ham
+ * aralashmaydi, muqova rangi esa taxmin qilinmaydi.
+ */
+function fileWordFor(kind: DocKind, code: string, adjective: string): string {
+  const uzbek = code === "UZB";
+  if (uzbek && kind === "pasport") return "qizil";
+  if (uzbek) return KIND_SLUG[kind];
+
+  const country = toAscii(adjective).toLowerCase();
+  return country ? `${country}_${KIND_SLUG[kind]}` : KIND_SLUG[kind];
+}
 
 /**
  * Davlatlar: Markaziy Osiyo va qo'shnilar. Ro'yxatda yo'q bo'lsa kodning
@@ -147,7 +173,7 @@ export function documentType(mrz: Mrz): DocumentType {
     country: name,
     countryAdjective: adjective,
     label: `${adjective} ${KIND_LABEL[kind]}${extra}`,
-    slug: `${code.toLowerCase().replace(/[^a-z]/g, "") || "xxx"}-${KIND_SLUG[kind]}`,
+    fileWord: fileWordFor(kind, code.replace(/[^A-Z]/g, ""), adjective),
   };
 }
 
@@ -174,20 +200,30 @@ const RESERVED = new Set([
 ]);
 
 /**
- * Rasm fayli uchun nom: `FAMILIYA_ISM_uzb-pasport`.
+ * Rasm fayli uchun nom: `asilbek_boyqobilov_qizil`.
  *
- * Windows, macOS va zip dasturlari bilan ishlashi uchun faqat ASCII harf,
- * raqam, `_` va `-` qoldiriladi. Kengaytma qo'shilmaydi — chaqiruvchi
+ * Tartib — ISM, keyin FAMILIYA (egasining talabi). MRZ'da aksincha
+ * yozilgan bo'ladi, shuning uchun bu yerda almashtiriladi.
+ * Hammasi kichik harfda: Windows fayl nomlarida registrni farqlamaydi,
+ * zip esa farqlaydi — kichik harf ikkisida ham bir xil ishlaydi.
+ *
+ * Faqat ASCII harf, raqam va `_` qoldiriladi, shunda Windows, macOS va
+ * har qanday zip dasturi ocha oladi. Kengaytma qo'shilmaydi — chaqiruvchi
  * qo'shadi.
  */
 export function photoBaseName(
-  mrz: Pick<Mrz, "surname" | "givenNames"> & { type: Pick<DocumentType, "slug"> },
+  mrz: Pick<Mrz, "surname" | "givenNames"> & { type: Pick<DocumentType, "fileWord"> },
 ): string {
   // Bo'sh qismlar tashlanadi — aks holda nom oxirida ortiqcha "_" qolib,
   // Windowsning band nomlari tekshiruvi ("CON_" ≠ "CON") ishlamay qolardi
-  let name = [toAscii(mrz.surname) || "NOMAALUM", toAscii(mrz.givenNames), mrz.type.slug]
+  let name = [
+    toAscii(mrz.givenNames),
+    toAscii(mrz.surname) || "nomaalum",
+    mrz.type.fileWord,
+  ]
     .filter(Boolean)
-    .join("_");
+    .join("_")
+    .toLowerCase();
 
   // Juda uzun nom ba'zi tizimlarda muammo beradi
   if (name.length > 120) name = name.slice(0, 120).replace(/_+$/, "");

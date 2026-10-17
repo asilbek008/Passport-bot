@@ -4,8 +4,24 @@
  * domen, webhook va HTTPS sertifikat kerak emas: oddiy kompyuterda ham turadi.
  */
 
+/** Xabar ostidagi tugma. `data` bosilganda qaytib keladi (64 baytgacha). */
+export type Button = { text: string; data: string };
+
 export type TgUpdate = {
   update_id: number;
+  /**
+   * Tugma bosilgani. Telegram buni alohida yangilik qilib yuboradi,
+   * shuning uchun `getUpdates` da ham alohida so'raladi.
+   */
+  callback_query?: {
+    id: string;
+    from: { id: number };
+    data?: string;
+    message?: {
+      message_id: number;
+      chat: { id: number; type: string };
+    };
+  };
   message?: {
     message_id: number;
     chat: { id: number; type: string };
@@ -114,6 +130,18 @@ export class Telegram {
     return body.result as T;
   }
 
+  /**
+   * Tugmalarni Telegram kutgan shaklga keltiradi.
+   * Har tugma alohida qatorda — telefonda matni kesilmaydi.
+   */
+  static keyboard(buttons: Button[]) {
+    return {
+      inline_keyboard: buttons.map((b) => [
+        { text: b.text, callback_data: b.data },
+      ]),
+    };
+  }
+
   sendMessage(chatId: number, text: string, extra: Record<string, unknown> = {}) {
     return this.call<{ message_id: number }>("sendMessage", {
       chat_id: chatId,
@@ -192,6 +220,45 @@ export class Telegram {
     if (!body.ok) throw new Error(`sendDocument: ${body.description ?? res.status}`);
   }
 
+  /**
+   * Tugma bosilganiga javob beradi — bu SHART.
+   *
+   * Javob bermasa Telegram tugmada aylanuvchi belgini ~30 soniya
+   * ko'rsatib turadi va xodim bosilmadi deb o'ylab qayta bosadi.
+   * Xato bo'lsa ham ish to'xtamasligi kerak, shuning uchun yutiladi.
+   */
+  async answerCallback(id: string, text = ""): Promise<void> {
+    try {
+      await this.call("answerCallbackQuery", {
+        callback_query_id: id,
+        ...(text ? { text } : {}),
+      });
+    } catch {
+      // Javob eskirgan bo'lishi mumkin (30 soniyadan oshsa) — muhim emas
+    }
+  }
+
+  /**
+   * Xabardagi tugmalarni olib tashlaydi yoki almashtiradi.
+   * Matnga tegmaydi — hisobot joyida qoladi.
+   */
+  async setButtons(
+    chatId: number,
+    messageId: number,
+    buttons: Button[] = [],
+  ): Promise<void> {
+    try {
+      await this.call("editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup:
+          buttons.length > 0 ? Telegram.keyboard(buttons) : { inline_keyboard: [] },
+      });
+    } catch {
+      // Tugmalar — qulaylik, ish to'xtamasin
+    }
+  }
+
   async setMyCommands(commands: { command: string; description: string }[]) {
     return this.call("setMyCommands", { commands });
   }
@@ -223,7 +290,8 @@ export class Telegram {
     return this.call<TgUpdate[]>("getUpdates", {
       offset,
       timeout,
-      allowed_updates: ["message"],
+      // Tugma bosilgani alohida tur — so'ralmasa umuman kelmaydi
+      allowed_updates: ["message", "callback_query"],
     });
   }
 }

@@ -113,28 +113,29 @@ test("o'zbek pasporti", () => {
   assert.equal(type.countryCode, "UZB");
   assert.equal(type.country, "O'zbekiston");
   assert.equal(type.label, "O'zbek pasporti");
-  assert.equal(type.slug, "uzb-pasport");
+  assert.equal(type.fileWord, "qizil", "egasining so'zi: qizil pasport");
 });
 
 test("o'zbek ID kartasi", () => {
   const type = documentType(td1({ surname: "SALIMOVA", given: "NARGIZA" }));
   assert.equal(type.kind, "id");
   assert.equal(type.label, "O'zbek ID kartasi");
-  assert.equal(type.slug, "uzb-id");
+  assert.equal(type.fileWord, "id");
 });
 
 test("tojik, qirg'iz va qozoq pasportlari", () => {
+  // Chet el hujjatida muqova rangi TAXMIN QILINMAYDI — davlat nomi yoziladi
   for (const [code, label, slug] of [
-    ["TJK", "Tojik pasporti", "tjk-pasport"],
-    ["KGZ", "Qirg'iz pasporti", "kgz-pasport"],
-    ["KAZ", "Qozoq pasporti", "kaz-pasport"],
+    ["TJK", "Tojik pasporti", "tojik_pasport"],
+    ["KGZ", "Qirg'iz pasporti", "qirgiz_pasport"],
+    ["KAZ", "Qozoq pasporti", "qozoq_pasport"],
   ] as const) {
     const type = documentType(
       td3({ state: code, nation: code, surname: "FAMILIYA", given: "ISM" }),
     );
     assert.equal(type.countryCode, code);
     assert.equal(type.label, label);
-    assert.equal(type.slug, slug);
+    assert.equal(type.fileWord, slug);
   }
 });
 
@@ -154,19 +155,40 @@ test("fuqarolik hujjat bergan davlatdan ustun turadi", () => {
 
 // --- Fayl nomi ---
 
-test("fayl nomi familiya_ism_turi shaklida", () => {
+test("fayl nomi ism_familiya_turi shaklida, kichik harfda", () => {
+  // Egasining talabi: asilbek_boyqobilov_qizil.jpg
+  const mrz = td3({ surname: "BOYQOBILOV", given: "ASILBEK" });
+  const name = photoBaseName({ ...mrz, type: documentType(mrz) });
+  assert.equal(name, "asilbek_boyqobilov_qizil");
+});
+
+test("qo'sh ism ham to'liq tushadi", () => {
   const mrz = td3({ surname: "KARIMOV", given: "AZIZ BEK" });
   const name = photoBaseName({ ...mrz, type: documentType(mrz) });
-  assert.equal(name, "KARIMOV_AZIZ_BEK_uzb-pasport");
+  assert.equal(name, "aziz_bek_karimov_qizil");
+});
+
+test("ID karta va chet el hujjati nomda ajraladi", () => {
+  const id = td1({ surname: "SALIMOVA", given: "NARGIZA" });
+  assert.equal(
+    photoBaseName({ ...id, type: documentType(id) }),
+    "nargiza_salimova_id",
+  );
+
+  const tjk = td3({ state: "TJK", nation: "TJK", surname: "RAHMONOV", given: "FIRUZ" });
+  assert.equal(
+    photoBaseName({ ...tjk, type: documentType(tjk) }),
+    "firuz_rahmonov_tojik_pasport",
+  );
 });
 
 test("o'zbek apostroflari fayl nomida yo'qoladi", () => {
   const name = photoBaseName({
     surname: "G'ULOMOV",
     givenNames: "O'KTAM",
-    type: { slug: "uzb-pasport" },
+    type: { fileWord: "qizil" },
   });
-  assert.equal(name, "GULOMOV_OKTAM_uzb-pasport");
+  assert.equal(name, "oktam_gulomov_qizil");
   assert.ok(/^[A-Za-z0-9_-]+$/.test(name), `faqat ASCII bo'lishi kerak: ${name}`);
 });
 
@@ -174,7 +196,7 @@ test("fayl nomida Windows taqiqlagan belgilar qolmaydi", () => {
   const name = photoBaseName({
     surname: 'A<B>C:D"E/F\\G|H?I*J',
     givenNames: "ISM",
-    type: { slug: "uzb-pasport" },
+    type: { fileWord: "qizil" },
   });
   assert.ok(!/[<>:"/\\|?*]/.test(name), `taqiqlangan belgi bor: ${name}`);
   assert.ok(/^[A-Za-z0-9_-]+$/.test(name));
@@ -185,7 +207,7 @@ test("Windows band qilgan nomlar himoyalanadi", () => {
   const name = photoBaseName({
     surname: "CON",
     givenNames: "",
-    type: { slug: "" },
+    type: { fileWord: "" },
   });
   assert.ok(name.startsWith("_"), `band nom himoyalanmagan: ${name}`);
 });
@@ -194,16 +216,16 @@ test("bo'sh familiya ham nom beradi", () => {
   const name = photoBaseName({
     surname: "",
     givenNames: "",
-    type: { slug: "uzb-pasport" },
+    type: { fileWord: "qizil" },
   });
-  assert.equal(name, "NOMAALUM_uzb-pasport");
+  assert.equal(name, "nomaalum_qizil");
 });
 
 test("juda uzun ism qisqartiriladi", () => {
   const name = photoBaseName({
     surname: "A".repeat(200),
     givenNames: "B".repeat(200),
-    type: { slug: "uzb-pasport" },
+    type: { fileWord: "qizil" },
   });
   assert.ok(name.length <= 120, `juda uzun: ${name.length}`);
 });

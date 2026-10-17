@@ -105,7 +105,23 @@ function okResult(mrzText: string): ReadResult {
 
 // --- Soxta bog'liqliklar ---
 
-type Sent = { chatId: number; text: string };
+type Sent = {
+  chatId: number;
+  text: string;
+  /** Xabar ostidagi tugmalar (bo'lsa) */
+  buttons?: { text: string; data: string }[];
+};
+
+/** `reply_markup` dan tugmalarni ajratib oladi. */
+function readButtons(extra: Record<string, unknown> | undefined) {
+  const markup = extra?.reply_markup as
+    | { inline_keyboard?: { text: string; callback_data: string }[][] }
+    | undefined;
+  if (!markup?.inline_keyboard) return undefined;
+  return markup.inline_keyboard
+    .flat()
+    .map((b) => ({ text: b.text, data: b.callback_data }));
+}
 
 /**
  * Bitta rasm uchun javob. Massiv berilsa — har chaqiruvda keyingisi
@@ -130,10 +146,16 @@ function makeDeps(
   let nextId = 1;
 
   const tg = {
-    async sendMessage(chatId: number, text: string) {
-      sent.push({ chatId, text });
+    async sendMessage(
+      chatId: number,
+      text: string,
+      extra?: Record<string, unknown>,
+    ) {
+      sent.push({ chatId, text, buttons: readButtons(extra) });
       return { message_id: nextId++ };
     },
+    async answerCallback() {},
+    async setButtons() {},
     async editMessage(chatId: number, _messageId: number, text: string) {
       edits.push({ chatId, text });
     },
@@ -401,12 +423,12 @@ test("/excel hammasini qayta jadval qilib beradi", async () => {
   const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
 
   await processBatch(OPERATOR, ["f1"], deps as never);
-  // To'plamdan keyin Excel va arxiv AVTOMATIK ketadi
-  assert.equal(documents.length, 2, "jadval va arxiv o'zi yuborilishi kerak");
+  // Fayl AVTOMATIK ketmaydi — xodim tugmadan tanlaydi
+  assert.equal(documents.length, 0, "so'ralmasdan fayl yuborilmasligi kerak");
 
   await handleUpdate(textUpdate(OPERATOR, "/excel"), deps as never);
 
-  assert.equal(documents.length, 3);
+  assert.equal(documents.length, 1);
   const excel = documents.at(-1)!;
   assert.equal(excel.name, "umra-pasportlar-2026-09-29.xlsx");
   assert.match(excel.caption, /\*1\* kishi/);
@@ -527,7 +549,7 @@ test("bazadagi xodim .env siz ham ishlaydi", async () => {
 
 // --- Rasm saqlash va zip arxiv ---
 
-test("rasm familiya_ism_turi nomi bilan saqlanadi", async () => {
+test("rasm ism_familiya_turi nomi bilan saqlanadi", async () => {
   const uzb = td3({
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB1111111",
     birth: "850412", sex: "M", expiry: "310101",
@@ -537,7 +559,8 @@ test("rasm familiya_ism_turi nomi bilan saqlanadi", async () => {
   await processBatch(OPERATOR, ["f1"], deps as never);
 
   const row = store.all()[0];
-  assert.equal(row.photo_file, "KARIMOV_AZIZ_uzb-pasport.jpg");
+  // Egasining talabi: asilbek_boyqobilov_qizil.jpg
+  assert.equal(row.photo_file, "aziz_karimov_qizil.jpg");
   assert.ok(existsSync(join(PHOTOS, row.photo_file!)), "fayl diskda bo'lishi kerak");
 
   // Hujjat turi ham yozilgan
@@ -550,9 +573,10 @@ test("rasm familiya_ism_turi nomi bilan saqlanadi", async () => {
 test("tojik/qirg'iz/qozoq hujjatlari ajratiladi", async () => {
   const reads: Record<string, ReturnType<typeof okResult>> = {};
   const expected: [string, string, string][] = [
-    ["TJK", "Tojik pasporti", "tjk-pasport"],
-    ["KGZ", "Qirg'iz pasporti", "kgz-pasport"],
-    ["KAZ", "Qozoq pasporti", "kaz-pasport"],
+    // Chet el hujjatida muqova rangi taxmin qilinmaydi — davlat yoziladi
+    ["TJK", "Tojik pasporti", "tojik_pasport"],
+    ["KGZ", "Qirg'iz pasporti", "qirgiz_pasport"],
+    ["KAZ", "Qozoq pasporti", "qozoq_pasport"],
   ];
   expected.forEach(([code], i) => {
     reads[`f${i}`] = okResult(
@@ -582,7 +606,7 @@ test("ID karta pasportdan ajratiladi", async () => {
   const row = store.all()[0];
   assert.equal(row.doc_kind, "id");
   assert.equal(row.doc_label, "O'zbek ID kartasi");
-  assert.ok(row.photo_file!.includes("uzb-id"), row.photo_file!);
+  assert.equal(row.photo_file, "davron_ismoilov_id.jpg");
   store.close();
 });
 
@@ -600,8 +624,7 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
   await processBatch(OPERATOR, ["f1", "f2"], deps as never);
   await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
 
-  // 1-2: to'plamdan keyin avtomatik, 3: qo'lda so'ralgan
-  assert.equal(documents.length, 3);
+  assert.equal(documents.length, 1, "faqat so'ralgan arxiv");
   const doc = documents.at(-1)!;
   assert.match(doc.name, /^umra-pasportlar-\d{4}-\d{2}-\d{2}\.zip$/);
   assert.match(doc.caption, /\*2\* rasm/);
@@ -617,8 +640,8 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
   // Arxiv ichida BITTA papka: rasmlar va Excel shunda
   const inside = readdirSync(join(dir, "out", "umra-pasportlar")).sort();
   assert.deepEqual(inside, [
-    "KARIMOV_AZIZ_uzb-pasport.jpg",
-    "SALIMOVA_NARGIZA_uzb-pasport.jpg",
+    "aziz_karimov_qizil.jpg",
+    "nargiza_salimova_qizil.jpg",
     "umra-pasportlar-2026-09-29.xlsx",
   ]);
   store.close();
@@ -652,7 +675,7 @@ test("rasm guruh papkasisiz, to'g'ri nom bilan saqlanadi", async () => {
   await processBatch(OPERATOR, ["f1"], deps as never);
 
   const file = store.all()[0].photo_file!;
-  assert.equal(file, "USMONOV_JAHON_uzb-pasport.jpg");
+  assert.equal(file, "jahon_usmonov_qizil.jpg");
   assert.ok(!file.includes("/"), "guruh papkasi bo'lmasligi kerak");
   assert.ok(existsSync(join(PHOTOS, file)));
   store.close();
@@ -1048,12 +1071,14 @@ test("/start qisqa yo'riqnoma beradi, guruh haqida gapirmaydi", async () => {
   const text = sent.map((m) => m.text).join("\n");
   assert.match(text, /rasmlarini shu yerga yuboring/);
   assert.match(text, /Excel/);
-  assert.match(text, /zip|Arxiv/);
+  assert.match(text, /Zip/i);
+  assert.match(text, /tugma/i, "tugmalardan tanlash aytilishi kerak");
+  assert.match(text, /ism_familiya_turi/, "fayl nomi namunasi");
   assert.ok(!/\/guruh/.test(text), `guruh haqida yozilib qolgan:\n${text}`);
   store.close();
 });
 
-test("rasmlar o'qilgach Excel va arxiv SO'RALMASDAN yuboriladi", async () => {
+test("rasmlar o'qilgach tugmalar chiqadi, fayl YUBORILMAYDI", async () => {
   const a = td3({
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
     birth: "850412", sex: "M", expiry: "310101",
@@ -1062,25 +1087,112 @@ test("rasmlar o'qilgach Excel va arxiv SO'RALMASDAN yuboriladi", async () => {
     surname: "SALIMOVA", given: "NARGIZA", docNumber: "AB7654321",
     birth: "900707", sex: "F", expiry: "320202",
   });
-  const { deps, documents, edits, store } = makeDeps({
+  const { deps, documents, sent, store } = makeDeps({
     f1: okResult(a),
     f2: okResult(b),
   });
 
   await processBatch(OPERATOR, ["f1", "f2"], deps as never);
 
-  assert.equal(documents.length, 2, "ikkita fayl: jadval va arxiv");
-  const [excel, zip] = documents;
-  assert.match(excel.name, /\.xlsx$/);
-  assert.match(zip.name, /\.zip$/);
-  assert.match(excel.caption, /\*2\* kishi/);
-  assert.match(zip.caption, /\*2\* rasm/);
-  // Hisobotda ham fayllar haqida aytiladi
-  assert.match(edits.at(-1)!.text, /Excel/);
+  // Egasining talabi: fayl o'zi kelmaydi, xodim tanlaydi
+  assert.equal(documents.length, 0, "so'ralmasdan fayl yuborilmasligi kerak");
+
+  const last = sent.at(-1)!;
+  assert.ok(last.buttons, "tugmalar bo'lishi kerak");
+  assert.deepEqual(
+    last.buttons!.map((b) => b.text),
+    ["🗂 Zip qilib olish", "📊 Excel qilib olish", "🔍 Pasport farqlash"],
+  );
+  assert.match(last.text, /2 ta hujjat/);
+  // Har tugmada to'plam raqami bo'ladi
+  for (const button of last.buttons!) {
+    assert.match(button.data, /^(zip|excel|farq):\d+$/, button.data);
+    assert.ok(button.data.length <= 64, "callback_data 64 baytdan oshmasligi kerak");
+  }
   store.close();
 });
 
-test("faqat shu to'plamdagi pasportlar fayllarga tushadi", async () => {
+/** Tugma bosilishini taqlid qiladi. */
+const pressButton = (chatId: number, data: string): TgUpdate => ({
+  update_id: 2,
+  callback_query: {
+    id: "cb1",
+    from: { id: chatId },
+    data,
+    message: { message_id: 1, chat: { id: chatId, type: "private" } },
+  },
+});
+
+/** Oxirgi tugmalar to'plamidan kerakli tugmaning `data` sini oladi. */
+function buttonData(sent: { buttons?: { text: string; data: string }[] }[], kind: string) {
+  const last = sent.filter((m) => m.buttons).at(-1);
+  assert.ok(last, "tugmali xabar topilmadi");
+  const button = last!.buttons!.find((b) => b.data.startsWith(`${kind}:`));
+  assert.ok(button, `${kind} tugmasi yo'q`);
+  return button!.data;
+}
+
+test("«Zip qilib olish» tugmasi arxiv beradi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  await handleUpdate(pressButton(OPERATOR, buttonData(sent, "zip")), deps as never);
+
+  assert.equal(documents.length, 1);
+  assert.match(documents[0].name, /\.zip$/);
+  assert.match(documents[0].caption, /\*1\* rasm/);
+  store.close();
+});
+
+test("«Excel qilib olish» tugmasi jadval beradi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  await handleUpdate(pressButton(OPERATOR, buttonData(sent, "excel")), deps as never);
+
+  assert.equal(documents.length, 1);
+  assert.match(documents[0].name, /\.xlsx$/);
+  assert.ok(documents[0].size > 2000, "haqiqiy xlsx bo'lishi kerak");
+  store.close();
+});
+
+test("«Pasport farqlash» tugmasi turlarga ajratib ko'rsatadi", async () => {
+  const uzb = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1111111",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const tjk = td3({
+    surname: "RAHMONOV", given: "FIRUZ", docNumber: "AB2222222",
+    birth: "880101", sex: "M", expiry: "310101", state: "TJK", nation: "TJK",
+  });
+  const { deps, documents, sent, store } = makeDeps({
+    f1: okResult(uzb),
+    f2: okResult(tjk),
+    f3: okResult(td1Id()),
+  });
+  await processBatch(OPERATOR, ["f1", "f2", "f3"], deps as never);
+
+  await handleUpdate(pressButton(OPERATOR, buttonData(sent, "farq")), deps as never);
+
+  const text = sent.at(-1)!.text;
+  assert.equal(documents.length, 0, "farqlash fayl yubormaydi");
+  assert.match(text, /O'zbek pasporti.*1 ta/s);
+  assert.match(text, /Tojik pasporti.*1 ta/s);
+  assert.match(text, /O'zbek ID kartasi.*1 ta/s);
+  assert.match(text, /KARIMOV/);
+  assert.match(text, /RAHMONOV/);
+  store.close();
+});
+
+test("tugma faqat shu to'plamga ta'sir qiladi", async () => {
   const old = td3({
     surname: "ESKIYEV", given: "OLD", docNumber: "AB1111111",
     birth: "800101", sex: "M", expiry: "310101",
@@ -1089,7 +1201,7 @@ test("faqat shu to'plamdagi pasportlar fayllarga tushadi", async () => {
     surname: "YANGIYEV", given: "NEW", docNumber: "AB2222222",
     birth: "850101", sex: "M", expiry: "310101",
   });
-  const { deps, documents, store } = makeDeps({
+  const { deps, documents, sent, store } = makeDeps({
     f1: okResult(old),
     f2: okResult(fresh),
   });
@@ -1097,18 +1209,68 @@ test("faqat shu to'plamdagi pasportlar fayllarga tushadi", async () => {
   await processBatch(OPERATOR, ["f1"], deps as never);
   await processBatch(OPERATOR, ["f2"], deps as never);
 
-  // Ikkinchi to'plamning fayli faqat 1 kishi bo'lishi kerak
-  const secondExcel = documents[2];
-  assert.match(secondExcel.name, /\.xlsx$/);
-  assert.match(
-    secondExcel.caption,
-    /\*1\* kishi/,
-    "butun baza emas, hozir yuborilganlar",
-  );
-  // Lekin bazada ikkisi ham bor, /excel hammasini beradi
+  // Ikkinchi to'plamning tugmasi faqat bitta kishini berishi kerak
+  await handleUpdate(pressButton(OPERATOR, buttonData(sent, "excel")), deps as never);
+  assert.match(documents.at(-1)!.caption, /\*1\* kishi/, "butun baza emas");
+
+  // Bazada esa ikkisi ham bor
   assert.equal(store.count(), 2);
   await handleUpdate(textUpdate(OPERATOR, "/excel"), deps as never);
   assert.match(documents.at(-1)!.caption, /\*2\* kishi/);
+  store.close();
+});
+
+test("ro'yxatda yo'q odam tugmani bossa ham hech narsa olmaydi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  const data = buttonData(sent, "zip");
+
+  // Tugmali xabar begonaga ko'chirilgan bo'lsa ham
+  await handleUpdate(pressButton(STRANGER, data), deps as never);
+
+  assert.equal(documents.length, 0, "begonaga fayl berilmaydi");
+  assert.match(sent.at(-1)!.text, /faqat xodimlar uchun/);
+  store.close();
+});
+
+test("boshqa xodimning to'plamini raqam bo'yicha ochib bo'lmaydi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
+  store.addOperator(222); // ikkinchi xodim
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  const data = buttonData(sent, "zip");
+
+  await handleUpdate(pressButton(222, data), deps as never);
+
+  assert.equal(documents.length, 0);
+  assert.match(sent.at(-1)!.text, /mavjud emas/);
+  store.close();
+});
+
+test("eskirgan tugma tushunarli javob beradi", async () => {
+  const { deps, documents, sent, store } = makeDeps({});
+  // Bot qayta ishga tushgan: bunday to'plam yo'q
+  await handleUpdate(pressButton(OPERATOR, "zip:999"), deps as never);
+
+  assert.equal(documents.length, 0);
+  assert.match(sent.at(-1)!.text, /mavjud emas/);
+  assert.match(sent.at(-1)!.text, /\/excel/, "nima qilish kerakligi aytiladi");
+  store.close();
+});
+
+test("buzuq tugma ma'lumoti botni to'xtatmaydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(pressButton(OPERATOR, "allaqanday-matn"), deps as never);
+  await handleUpdate(pressButton(OPERATOR, "zip:yoq"), deps as never);
+  await handleUpdate(pressButton(OPERATOR, ""), deps as never);
+  assert.equal(sent.length, 0, "javob bermaydi, lekin yiqilmaydi ham");
   store.close();
 });
 

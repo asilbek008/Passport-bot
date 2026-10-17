@@ -166,16 +166,20 @@ Butun ish ikki qadam:
 <pasport rasmlarini yuborasiz>    ← bittalab yoki albom qilib
 ```
 
-Keyin **hech narsa qilish kerak emas**: rasmlar o'qilgach bot o'zi
-ikkita fayl qaytaradi —
+Rasmlar o'qilgach hisobot va uning ostida **uchta tugma** chiqadi —
+nima kerakligini o'zingiz tanlaysiz:
 
-- 📊 **Excel jadval** — ism, familiya va pasport ma'lumotlari;
-- 🗂 **Arxiv (.zip)** — har pasportning rasmi, hujjatning o'ziga qirqilgan,
-  `FAMILIYA_ISM_turi.jpg` nomi bilan.
+| Tugma | Nima beradi |
+|---|---|
+| 🗂 **Zip qilib olish** | Rasmlar + Excel bitta arxivda. Har rasm `ism_familiya_turi.jpg` nomi bilan, hujjatning o'ziga qirqilgan |
+| 📊 **Excel qilib olish** | Ism, familiya va pasport ma'lumotlari jadvali |
+| 🔍 **Pasport farqlash** | Qaysi biri qizil pasport, qaysi biri ID karta, qaysi davlatniki |
 
-Avval `/guruh` bilan safar guruhini belgilash kerak edi. Egasining talabi
-bilan u butunlay olib tashlandi: bitta buyruq ham yozmasdan ishlatiladi.
-Fayllar keyin ham kerak bo'lsa — `/excel` va `/zip` hamma yozuvni beradi.
+Tugmalar faqat **o'sha to'plamga** ta'sir qiladi — 10 ta rasm yuborsangiz,
+tugma o'sha 10 tasini beradi, butun bazani emas. Hamma yozuv kerak bo'lsa
+`/excel` va `/zip` buyruqlari bor.
+
+Buyruq yozish kerak emas: bir necha o'nlab rasm tashlab, tugmani bosasiz.
 
 Bot rasmlarni yig'ib, birga o'qiydi va **bitta hisobot** beradi:
 
@@ -240,16 +244,28 @@ Arxiv ichida **bitta papka** bo'ladi:
 
 ```
 umra-pasportlar/
-  KARIMOV_AZIZ_uzb-pasport.jpg
-  SALIMOVA_NARGIZA_uzb-id.jpg
-  RAHMONOV_FIRUZ_tjk-pasport.jpg
+  asilbek_boyqobilov_qizil.jpg
+  nargiza_salimova_id.jpg
+  firuz_rahmonov_tojik_pasport.jpg
   umra-pasportlar-2026-10-01.xlsx
 ```
 
-Har rasm fayli **familiya, ism va hujjat turi** bilan nomlanadi — konsullikka
-yoki Nusuk tizimiga yuklashda qaysi fayl kimning hujjati ekani darhol ko'rinadi.
-Nomlar faqat ASCII harflardan (`O'` → `O`, `G'` → `G`), shuning uchun har
-qanday tizimda ochiladi.
+Har rasm fayli **ism, familiya va hujjat turi** bilan nomlanadi —
+konsullikka yoki Nusuk tizimiga yuklashda qaysi fayl kimning hujjati
+ekani darhol ko'rinadi:
+
+```
+asilbek_boyqobilov_qizil.jpg     o'zbek chet el pasporti
+nargiza_salimova_id.jpg          o'zbek ID kartasi
+firuz_rahmonov_tojik_pasport.jpg chet el hujjati
+```
+
+O'zbek hujjatlari qisqa nom oladi (`qizil`, `id`) — kundalik tilda
+shunday aytiladi. Chet el hujjatida muqova rangi **taxmin qilinmaydi**
+(rang MRZ'da yo'q), shuning uchun davlat nomi yoziladi.
+
+Nomlar kichik harfda va faqat ASCII dan (`O'` → `o`, `G'` → `g`),
+shuning uchun Windows, macOS va har qanday zip dasturida ochiladi.
 
 Bir xil ism-familiyali ikki kishi bo'lsa, ikkinchisining nomiga pasport raqami
 qo'shiladi — birining rasmi yo'qolib ketmaydi.
@@ -565,7 +581,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 258 test
+npm test         # 267 test
 npm run typecheck
 ```
 
