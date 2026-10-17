@@ -31,6 +31,15 @@ export const ReadSchema = z.object({
   place_of_birth: z.string().nullable(),
   authority: z.string().nullable(),
   document_kind: z.enum(["passport", "id_card", "visa", "other", "not_a_document"]),
+  /**
+   * ID karta bo'lsa — qaysi tomoni ko'rinayapti.
+   *
+   * MRZ faqat ORQA tomonda bo'ladi. Old tomonini yuborgan xodimga
+   * "kartani teskari qilib oling" deyish kerak, orqa tomonini
+   * yuborgan-u rasm xira bo'lsa — "yaqinroqdan, yorug'da oling".
+   * Ikkisining yechimi boshqacha, shuning uchun modeldan aniq so'raymiz.
+   */
+  id_side: z.enum(["front", "back"]).nullable().optional(),
   mrz_readable: z.boolean(),
   problem: z.string().nullable(),
   /**
@@ -87,11 +96,14 @@ QAT'IY QOIDALAR:
    (pasportda 44, ID kartada 30 belgi).
 5. 0 va O, 1 va I ni diqqat bilan ajrat: MRZ da raqam va harf farq qiladi.
 6. Rasmda hujjat bo'lmasa — document_kind='not_a_document', mrz_lines=[].
-7. ID KARTANING OLD TOMONI (surat, ism, karta raqami ko'rinadi, lekin
-   pastida MRZ qatorlari YO'Q) bo'lsa: document_kind='id_card',
-   mrz_readable=false, mrz_lines=[] va problem='old tomoni'. MRZ ID
-   kartaning ORQA tomonida bo'ladi — uni old tomondan topishga urinma
-   va o'ylab topma.
+7. ID KARTA bo'lsa, QAYSI TOMONI ekanini ayt:
+   • id_side='front' — old tomoni: surat, ism, karta raqami ko'rinadi,
+     lekin MRZ qatorlari YO'Q. Bunda document_kind='id_card',
+     mrz_readable=false, mrz_lines=[]. MRZ ID kartaning ORQA tomonida
+     bo'ladi — uni old tomondan topishga urinma va o'ylab topma;
+   • id_side='back' — orqa tomoni: pastida 3 qator x 30 belgili MRZ bor
+     (xira bo'lsa ham, qatorlarning o'zi ko'rinib tursa shu).
+   Pasportda bu maydon kerak emas: id_side=null.
 
 VIZA YORLIG'I: pasportga yopishtirilgan vizada ham MRZ bor (2 qator).
 Bunda document_kind='visa' va visa_type ni vizaning ko'rinadigan
@@ -145,7 +157,7 @@ kerak. Hujjat to'g'ri turgan bo'lsa 0. Ishonchingiz bo'lmasa 0 qoldir.
 JAVOB SHAKLI: faqat JSON obyekt, boshqa hech qanday matn yoki izohsiz:
 {"mrz_lines":["...","..."],"issue_date":null,"place_of_birth":null,
 "authority":null,"document_kind":"passport","mrz_readable":true,
-"problem":null,"visa_type":null,"document_box":[120,80,890,960],
+"problem":null,"id_side":null,"visa_type":null,"document_box":[120,80,890,960],
 "document_quad":[[130,95],[118,955],[885,962],[892,82]],"rotation":0}`;
 
 export const USER_PROMPT = "Bu hujjatning MRZ qatorlarini ko'chirib yoz.";
@@ -176,7 +188,15 @@ export type ReadResult =
    */
   | {
       ok: false;
-      reason: "unreadable" | "not_a_document" | "refused" | "id_front";
+      reason:
+        | "unreadable"
+        | "not_a_document"
+        | "refused"
+        | "id_front"
+        /** ID kartaning orqa tomoni, lekin MRZ aniq chiqmagan */
+        | "id_back_unclear"
+        /** MRZ topildi-yu, qatorlarning shakli to'g'ri kelmadi */
+        | "mrz_shape";
       problem: string;
     }
   | { ok: false; reason: "checks_failed"; problem: string; mrz: Mrz }
@@ -269,12 +289,27 @@ export function interpret(text: string, today: Date): ReadResult {
   }
 
   if (!out.mrz_readable || out.mrz_lines.length === 0) {
+    // ID KARTA: old tomoni yuborilgan bo'lsa yechim boshqacha — rasmni
+    // yaxshilash emas, kartani TESKARI qilib olish kerak.
+    //
+    // Lekin ORQA tomonini yuborib, rasm xira bo'lganda ham shuni aytsak,
+    // xodim kartani aylantirib yuraveradi. Shuning uchun qaror modelning
+    // `id_side` javobiga qarab qabul qilinadi; u aytilmagan bo'lsa,
+    // MRZ qatorlari umuman ko'rinmagani (mrz_lines bo'sh) — old tomoni
+    // bo'lishining belgisi.
+    const front =
+      out.document_kind === "id_card" &&
+      (out.id_side === "front" ||
+        (out.id_side == null && out.mrz_lines.length === 0));
     return {
       ok: false,
-      // ID kartada MRZ faqat ORQA tomonda bo'ladi. Shuning uchun
-      // "ID karta ko'rindi, lekin MRZ yo'q" degani deyarli har doim
-      // old tomoni yuborilgan degani — xodimga shu aytiladi.
-      reason: out.document_kind === "id_card" ? "id_front" : "unreadable",
+      reason: front
+        ? "id_front"
+        : out.document_kind === "id_card"
+          ? // Orqa tomonini yuborgan, lekin MRZ aniq chiqmagan:
+            // yechimi — kartani aylantirish emas, rasmni yaxshilash
+            "id_back_unclear"
+          : "unreadable",
       problem: out.problem ?? "MRZ qatorlari aniq ko'rinmadi.",
     };
   }
@@ -284,7 +319,11 @@ export function interpret(text: string, today: Date): ReadResult {
     mrz = parseMrz(out.mrz_lines.join("\n"), today);
   } catch (err) {
     if (err instanceof MrzError) {
-      return { ok: false, reason: "unreadable", problem: err.message };
+      // Bu xabarni O'ZIMIZNING kodimiz yozadi (model emas) va unda
+      // hujjat ma'lumoti yo'q — faqat qatorlar soni va uzunligi.
+      // Shuning uchun xodimga ko'rsatish xavfsiz va foydali: "xira yoki
+      // kesilgan" degan umumiy javobdan ko'ra nima bo'lgani aniq bo'ladi.
+      return { ok: false, reason: "mrz_shape", problem: err.message };
     }
     throw err;
   }

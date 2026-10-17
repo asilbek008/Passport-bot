@@ -154,3 +154,86 @@ test("monthsUntilExpiry vizaga yetadimi-yo'qmi hisoblaydi", () => {
   const old = parseMrz(`${TD3_L1}\n${TD3_L2}`, REF);
   assert.ok(monthsUntilExpiry(old, REF)! < 0);
 });
+
+// ───────────────── ID karta (TD1) va modelning to'ldiruvchi xatosi ─────────────────
+//
+// Modellar '<' larning SONINI tez-tez adashadi — ID kartada ular uzun
+// qator bo'lib ketgani uchun ayniqsa. Avval bunday qator butunlay
+// tashlab yuborilardi va xodim "MRZ o'qilmadi" degan javob olardi,
+// holbuki hujjat ko'rinib turardi.
+
+/** O'zbekiston ID kartasi ko'rinishidagi TD1 MRZ. */
+function uzbekId(): string[] {
+  const doc = "AB1234567";
+  const pinfl = "31234567890123"; // JSHSHIR
+  const l1 = `IDUZB${doc}${checkDigit(doc)}${pinfl}`.padEnd(30, "<");
+  const birth = "900115";
+  const expiry = "310820";
+  let l2 = `${birth}${checkDigit(birth)}M${expiry}${checkDigit(expiry)}UZB${"<".repeat(11)}`;
+  l2 += checkDigit(l1.slice(5, 30) + l2.slice(0, 7) + l2.slice(8, 15) + l2.slice(18, 29));
+  return [l1, l2, "BOYQOBILOV<<ASILBEK".padEnd(30, "<")];
+}
+
+test("O'zbekiston ID kartasi (TD1) to'liq o'qiladi", () => {
+  const mrz = parseMrz(uzbekId().join("\n"), REF);
+  assert.equal(mrz.format, "TD1");
+  assert.equal(mrz.valid, true);
+  assert.equal(mrz.surname, "BOYQOBILOV");
+  assert.equal(mrz.givenNames, "ASILBEK");
+  assert.equal(mrz.documentNumber, "AB1234567");
+  assert.equal(mrz.nationality, "UZB");
+  assert.equal(mrz.personalNumber, "31234567890123");
+});
+
+test("model to'ldiruvchi '<' ni kam o'qisa ham ID karta o'qiladi", () => {
+  const lines = uzbekId();
+  // Oxirgi qatordan bitta '<' tushib qolgan (29 belgi)
+  const broken = [lines[0], lines[1], lines[2].slice(0, 29)];
+  const mrz = parseMrz(broken.join("\n"), REF);
+  assert.equal(mrz.valid, true, "to'ldiruvchi tiklanishi va tekshiruvdan o'tishi kerak");
+  assert.equal(mrz.surname, "BOYQOBILOV");
+});
+
+test("model ortiqcha '<' qo'shsa ham o'qiladi", () => {
+  const lines = uzbekId();
+  const broken = [lines[0] + "<", lines[1], lines[2] + "<<"];
+  const mrz = parseMrz(broken.join("\n"), REF);
+  assert.equal(mrz.valid, true);
+  assert.equal(mrz.documentNumber, "AB1234567");
+});
+
+test("2-qatordagi tekshiruv raqamiga tegilmaydi", () => {
+  // Bu qatorning OXIRGI belgisi — umumiy tekshiruv raqami. To'ldiruvchi
+  // uning oldidan qo'shilishi kerak, aks holda raqam joyidan siljib,
+  // to'g'ri hujjat "tekshiruvdan o'tmadi" bo'lib qolardi
+  const lines = uzbekId();
+  const l2 = lines[1];
+  const shortened = l2.slice(0, 18) + l2.slice(19); // bitta '<' tushdi
+  assert.equal(shortened.length, 29);
+  const mrz = parseMrz([lines[0], shortened, lines[2]].join("\n"), REF);
+  assert.equal(mrz.valid, true);
+  assert.equal(mrz.checks.composite, true, "umumiy tekshiruv raqami joyida qolsin");
+});
+
+test("ma'noli belgi yetishmasa tiklanmaydi — taxmin qilinmaydi", () => {
+  const lines = uzbekId();
+  // Hujjat raqamidan belgi tushgan (to'ldiruvchi emas): qator oxiri '<'
+  // bo'lsa ham, bu yerda tiklash hujjat raqamini buzib qo'yardi.
+  // Tekshiruv raqami buni ushlaydi
+  const broken = [lines[0].slice(0, 8) + lines[0].slice(9), lines[1], lines[2]];
+  const mrz = parseMrz(broken.join("\n"), REF);
+  assert.equal(mrz.valid, false, "xato o'qilgan hujjat saqlanmasligi kerak");
+});
+
+test("qatorlar shakli to'g'ri kelmasa, nima bo'lgani aytiladi", () => {
+  // Xabarda qatorlar SONI va UZUNLIGI bo'ladi — ism va raqam emas
+  try {
+    parseMrz("QISQA<<QATOR<<<<<<<<<<<<<<\nYANA<<BITTA<<QATOR<<<<<<<<", REF);
+    assert.fail("xato kutilgan edi");
+  } catch (err) {
+    assert.ok(err instanceof MrzError);
+    assert.match((err as Error).message, /2 qator/);
+    assert.match((err as Error).message, /26/, "uzunliklari aytilsin");
+    assert.doesNotMatch((err as Error).message, /QATOR/, "matn chiqmasin");
+  }
+});

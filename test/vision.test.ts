@@ -129,3 +129,52 @@ test("ID kartaning ORQA tomoni (TD1) odatdagidek o'qiladi", () => {
   assert.equal(r.ok === true && r.mrz.format, "TD1");
   assert.equal(r.ok === true && r.mrz.surname, "ERIKSSON");
 });
+
+test("ID kartaning ORQA tomoni xira bo'lsa — 'teskari qiling' DEYILMAYDI", () => {
+  // Eng chalg'ituvchi holat: xodim to'g'ri tomonini yuborgan, lekin rasm
+  // xira. Unga "old tomonini yubordingiz" desak, kartani aylantirib
+  // yuraveradi va muammo hech qachon hal bo'lmaydi
+  const r = interpret(
+    JSON.stringify({
+      ...good,
+      document_kind: "id_card",
+      id_side: "back",
+      mrz_readable: false,
+      mrz_lines: ["IDUZBAB1234567<<<<<<<<<<<<<<<<"],
+      problem: "qatorlar xira",
+    }),
+    new Date("2026-10-17T00:00:00Z"),
+  );
+  assert.equal(r.ok === false && r.reason, "id_back_unclear");
+});
+
+test("ID kartaning old tomoni modelning so'ziga ko'ra aniqlanadi", () => {
+  const r = interpret(
+    JSON.stringify({
+      ...good,
+      document_kind: "id_card",
+      id_side: "front",
+      mrz_readable: false,
+      mrz_lines: [],
+    }),
+    new Date("2026-10-17T00:00:00Z"),
+  );
+  assert.equal(r.ok === false && r.reason, "id_front");
+});
+
+test("MRZ qatorlari shakli to'g'ri kelmasa, sabab alohida va aniq", () => {
+  // Model qatorlarni berdi, lekin ular na 3×30, na 2×44. Xodimga
+  // "xira yoki kesilgan" deyish noto'g'ri yo'l ko'rsatish bo'lardi
+  const r = interpret(
+    JSON.stringify({
+      ...good,
+      document_kind: "id_card",
+      id_side: "back",
+      mrz_readable: true,
+      mrz_lines: ["IDUZBAB1234567<<<<<<<<<<<<", "9001158M3108206UZB<<<<<<<<"],
+    }),
+    new Date("2026-10-17T00:00:00Z"),
+  );
+  assert.equal(r.ok === false && r.reason, "mrz_shape");
+  assert.match(r.ok === false ? r.problem : "", /qator/);
+});

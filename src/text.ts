@@ -472,6 +472,15 @@ export const t = {
   reasonIdBack:
     "ID kartaning old tomoni — MRZ kartaning ORQA tomonida, " +
     "o'sha tomonini suratga oling",
+  /**
+   * Orqa tomoni yuborilgan, lekin MRZ aniq chiqmagan.
+   *
+   * Bu yerda "teskari qilib oling" deyish XATO bo'lardi — xodim kartani
+   * aylantirib yuraveradi. Yechimi rasmni yaxshilash.
+   */
+  reasonIdUnclear:
+    "ID kartaning orqa tomoni ko'rindi, lekin pastdagi 3 qator aniq " +
+    "chiqmadi — kartani tekis qo'yib, yorug'da va yaqinroqdan oling",
   reasonNotDocument: "rasmda hujjat ko'rinmadi",
   reasonRefused: "rasmni o'qish rad etildi",
   reasonTechnical: "texnik xato",

@@ -372,10 +372,28 @@ Butunlay o'chirish: `.env` da `CROP=off`.
 | Pasport (qizil) | Surat bor **ma'lumot sahifasi** | MRZ shu sahifaning pastida, 2 qator |
 | ID karta | **ORQA** tomoni | MRZ kartaning orqasida, 3 qator. Old tomonida (surat, ism, karta raqami) MRZ **yo'q** |
 
-ID kartaning old tomoni yuborilsa, bot uni tanib: «ID kartaning old
-tomoni — MRZ kartaning ORQA tomonida, o'sha tomonini suratga oling»
-deydi. Avval bunday rasmga «MRZ o'qilmadi (xira yoki kesilgan)» deb
-javob berardi va xodim shu tomonni qayta-qayta suratga olib yurardi.
+ID karta uchun bot **uch holatni ajratadi** — ularning yechimi
+butunlay boshqacha:
+
+| Nima bo'lgan | Bot nima deydi |
+|---|---|
+| **Old tomoni** yuborilgan (surat va ism bor, MRZ yo'q) | «MRZ kartaning ORQA tomonida, o'sha tomonini suratga oling» |
+| **Orqa tomoni**, lekin rasm xira | «pastdagi 3 qator aniq chiqmadi — kartani tekis qo'yib, yorug'da va yaqinroqdan oling» |
+| MRZ ko'rindi, lekin qatorlar shakli to'g'ri kelmadi | «MRZ qatorlari to'g'ri chiqmadi (3 qator: 30, 27, 30 belgi)» — ya'ni nima bo'lgani aniq aytiladi |
+
+Qaysi tomoni ekanini model aytadi (`id_side`). Bu muhim: orqa tomonini
+yuborgan odamga «teskari qiling» desak, u kartani aylantirib
+yuraveradi va muammo hech qachon hal bo'lmaydi.
+
+**To'ldiruvchi `<` lar.** Modellar MRZ dagi `<` larning sonini tez-tez
+adashadi — ID kartada ular uzun qator bo'lib ketgani uchun ayniqsa.
+Avval bitta `<` kam o'qilsa, qator (29 belgi) butunlay tashlab
+yuborilardi va xodim «MRZ o'qilmadi» degan javob olardi, holbuki
+hujjat ko'rinib turardi. Endi qator **±2 belgi** farq bilan
+to'g'rilanadi — faqat to'ldiruvchi `<` hisobiga va **tekshiruv
+raqamiga tegmasdan**. Ma'noli belgi yetishsa tiklanmaydi: u yerda
+taxmin qilish hujjat raqamini buzib qo'yardi, tekshiruv raqami esa
+buni ushlaydi.
 
 ### Yaxshi rasm uchun
 
@@ -651,8 +669,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 310 test — bo'laklar alohida
-npm run sinov    # 28 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 319 test — bo'laklar alohida
+npm run sinov    # 30 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -671,12 +689,13 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan besh holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan olti holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
-qolmasligi, hujjat tekis va to'g'ri tomoni bilan chiqishi), va ID
-kartaning old tomoni yuborilganda orqa tomonini olish aytilishi.
+qolmasligi, hujjat tekis va to'g'ri tomoni bilan chiqishi), ID
+kartaning old tomoni yuborilganda orqa tomonini olish aytilishi, va
+orqa tomoni xira bo'lganda «teskari qiling» deyilmasligi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

@@ -295,6 +295,39 @@ async function withBot(mode, steps) {
           403,
         );
       }
+      if (mode === "idback") {
+        // Orqa tomoni yuborilgan, lekin MRZ xira
+        geminiHits.push("id_back");
+        return send({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      mrz_lines: ["IDUZBAB1234567<<<<<<<<<<<<<<<<"],
+                      issue_date: null,
+                      place_of_birth: null,
+                      authority: null,
+                      document_kind: "id_card",
+                      id_side: "back",
+                      mrz_readable: false,
+                      problem: "qatorlar xira",
+                      visa_type: null,
+                      document_box: null,
+                      document_quad: null,
+                      rotation: 0,
+                    }),
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 },
+        });
+      }
       if (mode === "idfront") {
         geminiHits.push("id_front");
         return send({
@@ -310,6 +343,7 @@ async function withBot(mode, steps) {
                       place_of_birth: null,
                       authority: null,
                       document_kind: "id_card",
+                      id_side: "front",
                       mrz_readable: false,
                       problem: "old tomoni",
                       visa_type: null,
@@ -813,6 +847,30 @@ async function idKartaOldTomoni() {
   });
 }
 
+// ───────── 6. ID kartaning ORQA tomoni, lekin rasm xira ─────────
+
+async function idKartaOrqaXira() {
+  console.log("\n6) ID kartaning orqa tomoni xira bo'lsa — 'teskari qiling' demaydi");
+  await withBot("idback", async (bot) => {
+    bot.photo(people[0], "albom-id2");
+    await bot.wait(
+      "hisobot",
+      (c) => c.method === "editMessageText" && /O'qilmadi/.test(c.body.text ?? ""),
+    );
+    const report = bot.reports();
+    check(
+      "Rasmni yaxshilashni aytadi",
+      /yaqinroqdan|yorug'da/.test(report),
+      (report.match(/❌.*/) ?? [""])[0].slice(0, 95),
+    );
+    check(
+      "Kartani teskari qilishni DEMAYDI",
+      !/ORQA tomonida/.test(report),
+      "xodim kartani aylantirib yurmaydi",
+    );
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -860,6 +918,7 @@ try {
   await kalitXato();
   await qoldaUshlangan();
   await idKartaOldTomoni();
+  await idKartaOrqaXira();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

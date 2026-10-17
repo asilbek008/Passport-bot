@@ -141,7 +141,45 @@ export function extractLines(text: string): string[] {
   return text
     .split(/\r?\n/)
     .map((l) => l.toUpperCase().replace(/[^A-Z0-9<]/g, ""))
-    .filter((l) => l.length === 30 || l.length === 36 || l.length === 44);
+    // Uzunlik bo'yicha qat'iy filtr YO'Q: model to'ldiruvchi '<' larni
+    // bitta kam yoki ortiq o'qishi juda ko'p uchraydi (ID kartada ular
+    // uzun qator bo'lib ketadi). Bunday qatorni tashlab yuborsak, butun
+    // hujjat "o'qilmadi" bo'lardi. Shuning uchun yaqin uzunliklar ham
+    // olinadi va keyin `fit()` bilan to'g'rilanadi — xato bo'lsa
+    // tekshiruv raqamlari baribir ushlaydi.
+    .filter((l) => l.length >= 26 && l.length <= 48);
+}
+
+/** Qatorni kutilgan uzunlikka keltiradi — FAQAT to'ldiruvchi '<' hisobiga. */
+export function fit(
+  line: string,
+  length: number,
+  /** Oxirgi belgisi tekshiruv raqami bo'lgan qator (TD1 2-qatori kabi) */
+  checkDigitLast = false,
+): string | null {
+  if (line.length === length) return line;
+
+  // Qancha farq qilishiga ruxsat: ikkitadan ko'p bo'lsa, bu boshqa
+  // matn yoki model MRZ ni jiddiy xato o'qigan
+  if (Math.abs(line.length - length) > 2) return null;
+
+  // Tekshiruv raqami oxirida bo'lsa, unga tegmaymiz: to'ldiruvchi
+  // undan OLDIN qo'shiladi yoki olinadi
+  const tail = checkDigitLast ? line.slice(-1) : "";
+  let body = checkDigitLast ? line.slice(0, -1) : line;
+  const target = checkDigitLast ? length - 1 : length;
+
+  while (body.length > target) {
+    if (!body.endsWith("<")) return null; // ma'noli belgi — kesib bo'lmaydi
+    body = body.slice(0, -1);
+  }
+  while (body.length < target) {
+    // Faqat to'ldiruvchi joyga qo'shamiz: qator '<' bilan tugasa
+    if (!body.endsWith("<")) return null;
+    body += "<";
+  }
+
+  return body + tail;
 }
 
 /** TD3 — biometrik pasport (2 × 44). Qizil (eski) pasportda ham shu format. */
@@ -281,16 +319,45 @@ function parseTd1(lines: string[], today: Date): Mrz {
 export function parseMrz(text: string, today = new Date()): Mrz {
   const lines = extractLines(text);
 
+  /**
+   * Qatorlarni formatga moslashtiradi. Oxirgi qatorning oxirgi belgisi —
+   * umumiy tekshiruv raqami (TD1 da 2-qator, TD2/TD3 da 2-qator), shuning
+   * uchun unga tegilmaydi.
+   */
+  const shape = (count: number, length: number, checkLine: number) => {
+    if (lines.length < count) return null;
+    const picked = lines.slice(-count);
+    const out: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const fixed = fit(picked[i], length, i === checkLine);
+      if (fixed === null) return null;
+      out.push(fixed);
+    }
+    return out;
+  };
+
+  // TD1 (ID karta) birinchi tekshiriladi: uch qator
+  const td1 = shape(3, 30, 1);
+  const td3 = shape(2, 44, 1);
+  const td2 = shape(2, 36, 1);
+
   let mrz: Mrz;
-  if (lines.length >= 3 && lines.slice(-3).every((l) => l.length === 30)) {
-    mrz = parseTd1(lines.slice(-3), today);
-  } else if (lines.length >= 2 && lines.slice(-2).every((l) => l.length === 44)) {
-    mrz = parseTd3(lines.slice(-2), today);
-  } else if (lines.length >= 2 && lines.slice(-2).every((l) => l.length === 36)) {
-    mrz = parseTd2(lines.slice(-2), today);
+  if (td1) {
+    mrz = parseTd1(td1, today);
+  } else if (td3) {
+    mrz = parseTd3(td3, today);
+  } else if (td2) {
+    mrz = parseTd2(td2, today);
   } else {
+    // Tashxis uchun qatorlar SONI va UZUNLIGI aytiladi — matni emas
+    // (unda ism va hujjat raqami bo'ladi)
+    const shapeText =
+      lines.length === 0
+        ? "biror qator topilmadi"
+        : `${lines.length} qator: ${lines.map((l) => l.length).join(", ")} belgi`;
     throw new MrzError(
-      "MRZ topilmadi: 2×44 (pasport), 3×30 (ID karta) yoki 2×36 qator kutilgan.",
+      `MRZ qatorlari to'g'ri chiqmadi (${shapeText}). ` +
+        "Kutilgani: 3×30 (ID karta), 2×44 (pasport) yoki 2×36.",
     );
   }
 

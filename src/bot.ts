@@ -1052,6 +1052,14 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
       // yaxshilash emas, boshqa tomonini olish
       case "id_front":
         return { kind: "failed", why: t.reasonIdBack };
+      case "id_back_unclear":
+        return { kind: "failed", why: t.reasonIdUnclear };
+      // MRZ ko'rindi, lekin qatorlar shakli to'g'ri kelmadi.
+      // Sabab O'ZIMIZNING kodimizdan (qatorlar soni va uzunligi),
+      // ichida hujjat ma'lumoti yo'q — xodimga aytamiz, chunki
+      // "xira yoki kesilgan" bu yerda noto'g'ri maslahat bo'lardi
+      case "mrz_shape":
+        return { kind: "failed", why: result.problem };
       case "refused":
         return { kind: "failed", why: t.reasonRefused };
       case "api_error":
