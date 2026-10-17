@@ -152,6 +152,25 @@ export class Telegram {
   }
 
   /**
+   * Pastdagi DOIMIY tugmalar (klaviatura o'rnida turadi).
+   *
+   * Inline tugmalardan farqi: bular xabarga biriktirilmaydi, ekran
+   * pastida doim turadi va bosilganda oddiy MATN yuboradi. Shuning
+   * uchun ular qaysi to'plam haqida ekanini bilmaydi — bot o'zi
+   * oxirgi to'plamni topadi.
+   *
+   * `is_persistent` — menyu yopilmasin; `resize_keyboard` — tugmalar
+   * baland bo'lib ekranni egallamasin.
+   */
+  static replyKeyboard(rows: string[][]) {
+    return {
+      keyboard: rows.map((row) => row.map((text) => ({ text }))),
+      resize_keyboard: true,
+      is_persistent: true,
+    };
+  }
+
+  /**
    * Tugmalarni Telegram kutgan shaklga keltiradi.
    * Har tugma alohida qatorda — telefonda matni kesilmaydi.
    */

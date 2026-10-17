@@ -460,6 +460,20 @@ export class Store {
     }
   }
 
+  /**
+   * Shu xodimning ENG OXIRGI to'plami.
+   *
+   * Pastdagi doimiy tugmalar uchun: ular oddiy matn yuboradi va qaysi
+   * to'plam haqida ekanini ayta olmaydi, shuning uchun oxirgisi
+   * olinadi.
+   */
+  lastBatch(chatId: number): number | null {
+    const row = this.db
+      .prepare("select id from batches where chat_id = ? order by id desc limit 1")
+      .get(chatId) as { id: number } | undefined;
+    return row?.id ?? null;
+  }
+
   /** Eski to'plamlarni tozalaydi — tugmalar baribir eskirib qoladi. */
   purgeBatches(days = 30): number {
     const info = this.db

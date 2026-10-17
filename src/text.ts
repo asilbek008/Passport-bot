@@ -519,6 +519,10 @@ export const t = {
       "Endi pasport rasmini yuborib ko'rsangiz bo'ladi.",
     ].join("\n"),
 
+  /** Pastdagi doimiy tugmalar paydo bo'lganda, bir qatorlik izoh. */
+  keyboardHint:
+    "_Pastdagi tugmalar ham shu to'plam uchun — ular doim qo'l ostida turadi._",
+
   buttons: {
     zip: "🗂 Zip qilib olish",
     excel: "📊 Excel qilib olish",

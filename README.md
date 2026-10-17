@@ -175,7 +175,18 @@ nima kerakligini o'zingiz tanlaysiz:
 | 📊 **Excel qilib olish** | Ism, familiya va pasport ma'lumotlari jadvali |
 | 🔍 **Pasport farqlash** | Qaysi biri qizil pasport, qaysi biri ID karta, qaysi davlatniki |
 
-Tugmalar faqat **o'sha to'plamga** ta'sir qiladi — 10 ta rasm yuborsangiz,
+Tugmalar **ikki joyda** turadi:
+
+- **xabar ostida** (inline) — aniq o'sha to'plam uchun;
+- **ekran ostida** (doimiy klaviatura) — doim qo'l ostida, **oxirgi
+  to'plam** bo'yicha ishlaydi.
+
+Ikkisi bir xil ish qiladi. Doimiy tugmalar `/start` da qo'yiladi va
+har to'plamdan keyin ham ko'rsatiladi. Ular oddiy matn yuboradi, ya'ni
+qaysi to'plam haqida ekanini ayta olmaydi — shuning uchun bot eng
+oxirgisini oladi. Emojisiz yozilsa ham tushunadi.
+
+Inline tugmalar faqat **o'sha to'plamga** ta'sir qiladi — 10 ta rasm yuborsangiz,
 tugma o'sha 10 tasini beradi, butun bazani emas. Hamma yozuv kerak bo'lsa
 `/excel` va `/zip` buyruqlari bor.
 
@@ -582,7 +593,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 280 test
+npm test         # 289 test
 npm run typecheck
 ```
 

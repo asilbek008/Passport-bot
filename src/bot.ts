@@ -95,6 +95,34 @@ const LIST_LIMIT = 40;
  * `data` — 64 baytgacha. Shuning uchun u yerda faqat amal nomi va
  * to'plam raqami turadi, pasport raqamlari esa bazada (`batches`).
  */
+/**
+ * Pastdagi DOIMIY tugmalar — ekran ostida turadi.
+ *
+ * Inline tugmalardan farqi: bosilganda oddiy matn yuboradi, ya'ni
+ * qaysi to'plam haqida ekanini bilmaydi. Shuning uchun ular ENG
+ * OXIRGI to'plam bo'yicha ishlaydi (`store.lastBatch`).
+ *
+ * Ikkisi ham qoldi, chunki ikkisi ikki xil qulaylik beradi:
+ * inline — aniq o'sha to'plam; pastdagi — doim qo'l ostida.
+ */
+const KEYBOARD_ROWS = (): string[][] => [
+  [t.buttons.zip, t.buttons.excel],
+  [t.buttons.kinds],
+];
+
+/** Pastdagi tugma matni qaysi amalga to'g'ri keladi. */
+function keyboardAction(text: string): "zip" | "excel" | "farq" | null {
+  // Emojisiz yozilgan bo'lsa ham tushunamiz — xodim qo'lda yozishi mumkin
+  const clean = text.replace(/[^\p{L}\s]/gu, "").trim().toLowerCase();
+  const match = (label: string) =>
+    label.replace(/[^\p{L}\s]/gu, "").trim().toLowerCase() === clean;
+
+  if (match(t.buttons.zip)) return "zip";
+  if (match(t.buttons.excel)) return "excel";
+  if (match(t.buttons.kinds)) return "farq";
+  return null;
+}
+
 function batchButtons(batchId: number): Button[] {
   return [
     { text: t.buttons.zip, data: `zip:${batchId}` },
@@ -144,6 +172,13 @@ export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> 
     return;
   }
 
+  // Pastdagi doimiy tugma bosilgan bo'lsa — oxirgi to'plam bo'yicha
+  const pressed = raw ? keyboardAction(raw) : null;
+  if (pressed) {
+    await runBatchAction(pressed, chatId, deps.store.lastBatch(chatId), deps);
+    return;
+  }
+
   if (raw.startsWith("/")) {
     const [head, ...rest] = raw.split(/\s+/);
     const command = head.slice(1).split("@")[0].toLowerCase();
@@ -165,6 +200,54 @@ export async function handleUpdate(update: TgUpdate, deps: Deps): Promise<void> 
 
   if (!raw.startsWith("/")) {
     await deps.tg.sendMessage(chatId, t.sendPhoto);
+  }
+}
+
+/**
+ * Tugma bosilgandagi ish — inline va pastdagi tugma uchun BIR XIL.
+ *
+ * Ikkisi bir xil ishni qilishi kerak, shuning uchun mantiq bitta
+ * joyda: aks holda bittasini tuzatib, ikkinchisini unutish oson.
+ */
+async function runBatchAction(
+  action: string,
+  chatId: number,
+  batchId: number | null,
+  deps: Deps,
+): Promise<void> {
+  const docNumbers = batchId === null ? null : deps.store.batch(batchId, chatId);
+  if (!docNumbers) {
+    await reply(deps.tg, chatId, t.batchExpired);
+    return;
+  }
+
+  const rows = deps.store.byDocNumbers(docNumbers);
+  if (rows.length === 0) {
+    await reply(deps.tg, chatId, t.batchExpired);
+    return;
+  }
+
+  const now = deps.now?.() ?? new Date();
+
+  try {
+    switch (action) {
+      case "zip":
+        await sendArchive(chatId, rows, deps, now);
+        return;
+      case "excel":
+        await sendWorkbook(chatId, rows, deps, now);
+        return;
+      case "farq":
+        await reply(deps.tg, chatId, t.docKinds(rows));
+        return;
+    }
+  } catch (err) {
+    // Ma'lumot joyida, faqat fayl ketmadi. Tugmalar qolgani uchun
+    // xodim qayta bosa oladi — shuni aytamiz.
+    console.error(
+      `[tugma] ${action} bajarilmadi: ${err instanceof Error ? err.message : "noma'lum"}`,
+    );
+    await reply(deps.tg, chatId, t.filesFailed);
   }
 }
 
@@ -206,41 +289,8 @@ async function handleCallback(
   const batchId = Number(raw);
   if (!Number.isInteger(batchId)) return;
 
-  const docNumbers = deps.store.batch(batchId, chatId);
-  // Bot qayta ishga tushgan yoki to'plam eskirgan bo'lishi mumkin
-  if (!docNumbers) {
-    await reply(deps.tg, chatId, t.batchExpired);
-    return;
-  }
-
-  const rows = deps.store.byDocNumbers(docNumbers);
-  if (rows.length === 0) {
-    await reply(deps.tg, chatId, t.batchExpired);
-    return;
-  }
-
-  const now = deps.now?.() ?? new Date();
-
-  try {
-    switch (action) {
-      case "zip":
-        await sendArchive(chatId, rows, deps, now);
-        return;
-      case "excel":
-        await sendWorkbook(chatId, rows, deps, now);
-        return;
-      case "farq":
-        await reply(deps.tg, chatId, t.docKinds(rows));
-        return;
-    }
-  } catch (err) {
-    // Ma'lumot joyida, faqat fayl ketmadi. Tugmalar qolgani uchun
-    // xodim qayta bosa oladi — shuni aytamiz.
-    console.error(
-      `[tugma] ${action} bajarilmadi: ${err instanceof Error ? err.message : "noma'lum"}`,
-    );
-    await reply(deps.tg, chatId, t.filesFailed);
-  }
+  // Ish pastdagi tugma bilan bir xil — mantiq bitta joyda
+  await runBatchAction(action, chatId, batchId, deps);
 }
 
 function hasPhoto(msg: NonNullable<TgUpdate["message"]>): boolean {
@@ -288,9 +338,22 @@ async function handleCommand(
   const now = deps.now?.() ?? new Date();
 
   switch (command) {
-    case "start":
-      await reply(tg, chatId, t.start(store.count()));
+    case "start": {
+      // Pastdagi doimiy tugmalar shu yerda o'rnatiladi — bir marta
+      // qo'yilsa, keyin suhbatda doim turadi
+      const parts = splitMessage(t.start(store.count()));
+      for (const [i, part] of parts.entries()) {
+        await tg.sendMessage(
+          chatId,
+          part,
+          // Klaviatura oxirgi xabar bilan beriladi
+          i === parts.length - 1
+            ? { reply_markup: Telegram.replyKeyboard(KEYBOARD_ROWS()) }
+            : {},
+        );
+      }
       return;
+    }
 
     case "yordam":
     case "help":
@@ -885,6 +948,12 @@ export async function processBatch(
   // bo'linganda ular ko'rinmay qolmasligi uchun
   await tg.sendMessage(chatId, t.pickAction(batchRows.length), {
     reply_markup: Telegram.keyboard(batchButtons(batchId)),
+  });
+
+  // Pastdagi doimiy tugmalar ham turgan bo'lsin: xodim /start
+  // bosmagan bo'lsa ham ular paydo bo'ladi
+  await tg.sendMessage(chatId, t.keyboardHint, {
+    reply_markup: Telegram.replyKeyboard(KEYBOARD_ROWS()),
   });
 }
 

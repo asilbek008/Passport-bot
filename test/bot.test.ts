@@ -110,7 +110,21 @@ type Sent = {
   text: string;
   /** Xabar ostidagi tugmalar (bo'lsa) */
   buttons?: { text: string; data: string }[];
+  /** Pastdagi doimiy tugmalar (bo'lsa) */
+  keyboard?: { rows: string[][]; persistent: boolean };
 };
+
+/** `reply_markup` dan PASTDAGI doimiy tugmalarni ajratib oladi. */
+function readKeyboard(extra: Record<string, unknown> | undefined) {
+  const markup = extra?.reply_markup as
+    | { keyboard?: { text: string }[][]; is_persistent?: boolean }
+    | undefined;
+  if (!markup?.keyboard) return undefined;
+  return {
+    rows: markup.keyboard.map((row) => row.map((b) => b.text)),
+    persistent: markup.is_persistent === true,
+  };
+}
 
 /** `reply_markup` dan tugmalarni ajratib oladi. */
 function readButtons(extra: Record<string, unknown> | undefined) {
@@ -151,7 +165,12 @@ function makeDeps(
       text: string,
       extra?: Record<string, unknown>,
     ) {
-      sent.push({ chatId, text, buttons: readButtons(extra) });
+      sent.push({
+        chatId,
+        text,
+        buttons: readButtons(extra),
+        keyboard: readKeyboard(extra),
+      });
       return { message_id: nextId++ };
     },
     async answerCallback() {},
@@ -1097,8 +1116,10 @@ test("rasmlar o'qilgach tugmalar chiqadi, fayl YUBORILMAYDI", async () => {
   // Egasining talabi: fayl o'zi kelmaydi, xodim tanlaydi
   assert.equal(documents.length, 0, "so'ralmasdan fayl yuborilmasligi kerak");
 
-  const last = sent.at(-1)!;
-  assert.ok(last.buttons, "tugmalar bo'lishi kerak");
+  // Oxirgi xabar pastdagi klaviatura haqida bo'lishi mumkin —
+  // inline tugmali xabarni aniq qidiramiz
+  const last = sent.filter((m) => m.buttons).at(-1)!;
+  assert.ok(last?.buttons, "tugmalar bo'lishi kerak");
   assert.deepEqual(
     last.buttons!.map((b) => b.text),
     ["🗂 Zip qilib olish", "📊 Excel qilib olish", "🔍 Pasport farqlash"],
@@ -1446,5 +1467,133 @@ test("sinov tugmasini begona odam bosa olmaydi", async () => {
   const { deps, sent, store } = makeDeps({});
   await handleUpdate(pressButton(STRANGER, "sinov:zip"), deps as never);
   assert.match(sent.at(-1)!.text, /faqat xodimlar uchun/);
+  store.close();
+});
+
+// --- Pastdagi doimiy tugmalar ---
+//
+// Egasining talabi: inline tugmalardan tashqari, ekran ostida doim
+// turadigan tugmalar ham bo'lsin. Ular oddiy matn yuboradi, ya'ni
+// qaysi to'plam haqida ekanini bilmaydi — bot oxirgisini topadi.
+
+test("/start pastdagi doimiy tugmalarni qo'yadi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/start"), deps as never);
+
+  const withKeyboard = sent.filter((m) => m.keyboard);
+  assert.equal(withKeyboard.length, 1, "klaviatura bir marta qo'yiladi");
+  const keyboard = withKeyboard[0].keyboard!;
+  assert.deepEqual(keyboard.rows, [
+    ["🗂 Zip qilib olish", "📊 Excel qilib olish"],
+    ["🔍 Pasport farqlash"],
+  ]);
+  assert.equal(keyboard.persistent, true, "menyu yopilmasligi kerak");
+  store.close();
+});
+
+test("to'plamdan keyin ham klaviatura paydo bo'ladi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.ok(
+    sent.some((m) => m.keyboard),
+    "/start bosmagan xodimda ham tugmalar chiqishi kerak",
+  );
+  store.close();
+});
+
+test("pastdagi tugma oxirgi to'plam bo'yicha arxiv beradi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  // Tugma bosilganda Telegram oddiy MATN yuboradi
+  await handleUpdate(textUpdate(OPERATOR, "🗂 Zip qilib olish"), deps as never);
+
+  assert.equal(documents.length, 1);
+  assert.match(documents[0].name, /\.zip$/);
+  store.close();
+});
+
+test("pastdagi tugmalarning uchalasi ham ishlaydi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  await handleUpdate(textUpdate(OPERATOR, "📊 Excel qilib olish"), deps as never);
+  assert.match(documents.at(-1)!.name, /\.xlsx$/);
+
+  await handleUpdate(textUpdate(OPERATOR, "🔍 Pasport farqlash"), deps as never);
+  assert.match(sent.at(-1)!.text, /Hujjat turlari/);
+  store.close();
+});
+
+test("emojisiz yozilsa ham tushunadi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, store } = makeDeps({ f1: okResult(mrz) });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  // Xodim qo'lda yozishi mumkin
+  await handleUpdate(textUpdate(OPERATOR, "zip qilib olish"), deps as never);
+  assert.equal(documents.length, 1, "emojisiz matn ham ishlashi kerak");
+  store.close();
+});
+
+test("to'plam bo'lmasa pastdagi tugma tushuntiradi", async () => {
+  const { deps, documents, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "🗂 Zip qilib olish"), deps as never);
+
+  assert.equal(documents.length, 0);
+  assert.match(sent.at(-1)!.text, /mavjud emas/);
+  store.close();
+});
+
+test("pastdagi tugma ENG OXIRGI to'plamni oladi", async () => {
+  const old = td3({
+    surname: "ESKIYEV", given: "OLD", docNumber: "AB1111111",
+    birth: "800101", sex: "M", expiry: "310101",
+  });
+  const fresh = td3({
+    surname: "YANGIYEV", given: "NEW", docNumber: "AB2222222",
+    birth: "850101", sex: "M", expiry: "310101",
+  });
+  const { deps, documents, store } = makeDeps({
+    f1: okResult(old),
+    f2: okResult(fresh),
+  });
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  await processBatch(OPERATOR, ["f2"], deps as never);
+
+  await handleUpdate(textUpdate(OPERATOR, "📊 Excel qilib olish"), deps as never);
+  assert.match(documents.at(-1)!.caption, /\*1\* kishi/, "oxirgi to'plam");
+  store.close();
+});
+
+test("begona odamga pastdagi tugma ham yordam bermaydi", async () => {
+  const { deps, documents, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(STRANGER, "🗂 Zip qilib olish"), deps as never);
+  assert.equal(documents.length, 0);
+  assert.match(sent.at(-1)!.text, /faqat xodimlar uchun/);
+  store.close();
+});
+
+test("oddiy matn tugma deb qabul qilinmaydi", async () => {
+  const { deps, sent, documents, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "salom"), deps as never);
+  assert.equal(documents.length, 0);
+  assert.match(sent.at(-1)!.text, /rasmini.*yuboring/is);
   store.close();
 });
