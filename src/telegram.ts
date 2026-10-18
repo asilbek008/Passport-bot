@@ -162,6 +162,17 @@ export class Telegram {
    * `is_persistent` — menyu yopilmasin; `resize_keyboard` — tugmalar
    * baland bo'lib ekranni egallamasin.
    */
+  /**
+   * Pastdagi doimiy tugmalarni OLIB TASHLAYDI.
+   *
+   * Egasining talabi: tugmalar bo'sh suhbatda turmasin — ular faqat
+   * rasm o'qilgandan keyin, aynan o'sha to'plam uchun kerak. Telegram
+   * klaviaturani o'zi yashirmaydi, shuning uchun aniq aytish kerak.
+   */
+  static hideKeyboard() {
+    return { remove_keyboard: true };
+  }
+
   static replyKeyboard(rows: string[][]) {
     return {
       keyboard: rows.map((row) => row.map((text) => ({ text }))),

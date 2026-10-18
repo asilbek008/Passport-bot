@@ -726,18 +726,21 @@ async function asosiy() {
       cmds.map((c) => `/${c.command}`).join(" "),
     );
 
-    // /start — pastdagi doimiy tugmalar
+    // /start — tugmalar HALI chiqmasligi kerak (bo'sh suhbatda ma'nosiz)
     bot.text("/start");
     const start = await bot.wait(
       "/start javobi",
+      (c) => c.method === "sendMessage" && /Assalomu/.test(c.body.text ?? ""),
+    );
+    const startedWithKeyboard = bot.calls.some(
       (c) => c.method === "sendMessage" && c.body.reply_markup?.keyboard,
     );
-    const rows = start.body.reply_markup.keyboard.map((r) => r.map((b) => b.text));
     check(
-      "Pastdagi doimiy tugmalar chiqdi",
-      rows.flat().length === 3 && start.body.reply_markup.is_persistent === true,
-      rows.flat().join(" / "),
+      "/start da pastdagi tugmalar chiqmaydi",
+      !startedWithKeyboard,
+      "bo'sh suhbat toza qoladi",
     );
+    void start;
 
     // Ikki pasport bitta albomda
     bot.photo(people[0], "albom-1");
@@ -754,6 +757,18 @@ async function asosiy() {
     const inline = picked.body.reply_markup.inline_keyboard.flat();
     check("Ikki rasm o'qildi va 3 ta tugma chiqdi", inline.length === 3,
       inline.map((b) => b.text).join(" / "));
+
+    // Pastdagi doimiy tugmalar AYNAN SHU YERDA paydo bo'ladi
+    const keyboard = bot.calls.find(
+      (c) => c.method === "sendMessage" && c.body.reply_markup?.keyboard,
+    );
+    check(
+      "Pastdagi tugmalar rasmdan keyin paydo bo'ldi",
+      Boolean(keyboard) && keyboard.body.reply_markup.is_persistent === true,
+      keyboard
+        ? keyboard.body.reply_markup.keyboard.flat().map((b) => b.text).join(" / ")
+        : "chiqmadi",
+    );
     check("Ikkala rasm ham modelga ketdi", bot.geminiHits.length === 2);
 
     const report = bot.reports();

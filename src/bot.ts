@@ -398,17 +398,19 @@ async function handleCommand(
 
   switch (command) {
     case "start": {
-      // Pastdagi doimiy tugmalar shu yerda o'rnatiladi — bir marta
-      // qo'yilsa, keyin suhbatda doim turadi
+      // Pastdagi tugmalar bu yerda QO'YILMAYDI, aksincha olib tashlanadi.
+      //
+      // Egasining talabi: ular bo'sh suhbatda turmasin — "Zip qilib
+      // olish" tugmasi hali hech narsa yuborilmagan paytda ma'nosiz.
+      // Tugmalar rasm o'qilgandan keyin, aynan o'sha to'plam uchun
+      // chiqadi (`processBatch` oxirida).
       const parts = splitMessage(t.start(store.count()));
       for (const [i, part] of parts.entries()) {
         await tg.sendMessage(
           chatId,
           part,
-          // Klaviatura oxirgi xabar bilan beriladi
-          i === parts.length - 1
-            ? { reply_markup: Telegram.replyKeyboard(KEYBOARD_ROWS()) }
-            : {},
+          // Eski klaviatura qolgan bo'lsa, oxirgi xabar bilan yopiladi
+          i === parts.length - 1 ? { reply_markup: Telegram.hideKeyboard() } : {},
         );
       }
       return;
@@ -1119,8 +1121,8 @@ export async function processBatch(
     reply_markup: Telegram.keyboard(batchButtons(batchId)),
   });
 
-  // Pastdagi doimiy tugmalar ham turgan bo'lsin: xodim /start
-  // bosmagan bo'lsa ham ular paydo bo'ladi
+  // Pastdagi tugmalar AYNAN SHU YERDA paydo bo'ladi: rasm o'qilgandan
+  // keyin. Bo'sh suhbatda ular turmaydi (`/start` ularni yopadi)
   await tg.sendMessage(chatId, t.keyboardHint, {
     reply_markup: Telegram.replyKeyboard(KEYBOARD_ROWS()),
   });

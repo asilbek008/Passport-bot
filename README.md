@@ -178,8 +178,12 @@ nima kerakligini o'zingiz tanlaysiz:
 Tugmalar **ikki joyda** turadi:
 
 - **xabar ostida** (inline) — aniq o'sha to'plam uchun;
-- **ekran ostida** (doimiy klaviatura) — doim qo'l ostida, **oxirgi
-  to'plam** bo'yicha ishlaydi.
+- **ekran ostida** (doimiy klaviatura) — **oxirgi to'plam** bo'yicha
+  ishlaydi.
+
+Ikkalasi ham **rasm o'qilgandan keyin** paydo bo'ladi. Bo'sh suhbatda
+pastdagi tugmalar turmaydi: hali hech narsa yuborilmagan paytda "Zip
+qilib olish" ma'nosiz, `/start` esa aksincha eski klaviaturani yopadi.
 
 Ikkisi bir xil ish qiladi. Doimiy tugmalar `/start` da qo'yiladi va
 har to'plamdan keyin ham ko'rsatiladi. Ular oddiy matn yuboradi, ya'ni

@@ -113,6 +113,8 @@ type Sent = {
   buttons?: { text: string; data: string }[];
   /** Pastdagi doimiy tugmalar (bo'lsa) */
   keyboard?: { rows: string[][]; persistent: boolean };
+  /** Pastdagi tugmalar OLIB TASHLANGANI */
+  keyboardHidden?: boolean;
 };
 
 /** `reply_markup` dan PASTDAGI doimiy tugmalarni ajratib oladi. */
@@ -171,6 +173,9 @@ function makeDeps(
         text,
         buttons: readButtons(extra),
         keyboard: readKeyboard(extra),
+        keyboardHidden:
+          (extra?.reply_markup as { remove_keyboard?: boolean } | undefined)
+            ?.remove_keyboard === true,
       });
       return { message_id: nextId++ };
     },
@@ -1480,22 +1485,25 @@ test("sinov tugmasini begona odam bosa olmaydi", async () => {
 // turadigan tugmalar ham bo'lsin. Ular oddiy matn yuboradi, ya'ni
 // qaysi to'plam haqida ekanini bilmaydi — bot oxirgisini topadi.
 
-test("/start pastdagi doimiy tugmalarni qo'yadi", async () => {
+test("/start pastdagi tugmalarni QO'YMAYDI — aksincha yopadi", async () => {
+  // Egasining talabi: tugmalar bo'sh suhbatda turmasin. "Zip qilib
+  // olish" hali hech narsa yuborilmagan paytda ma'nosiz
   const { deps, sent, store } = makeDeps({});
   await handleUpdate(textUpdate(OPERATOR, "/start"), deps as never);
 
-  const withKeyboard = sent.filter((m) => m.keyboard);
-  assert.equal(withKeyboard.length, 1, "klaviatura bir marta qo'yiladi");
-  const keyboard = withKeyboard[0].keyboard!;
-  assert.deepEqual(keyboard.rows, [
-    ["🗂 Zip qilib olish", "📊 Excel qilib olish"],
-    ["🔍 Pasport farqlash"],
-  ]);
-  assert.equal(keyboard.persistent, true, "menyu yopilmasligi kerak");
+  assert.equal(
+    sent.filter((m) => m.keyboard).length,
+    0,
+    "bo'sh suhbatda tugmalar chiqmasin",
+  );
+  assert.ok(
+    sent.some((m) => m.keyboardHidden),
+    "eski klaviatura qolgan bo'lsa yopilsin",
+  );
   store.close();
 });
 
-test("to'plamdan keyin ham klaviatura paydo bo'ladi", async () => {
+test("klaviatura RASM O'QILGANDAN KEYIN paydo bo'ladi", async () => {
   const mrz = td3({
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
     birth: "850412", sex: "M", expiry: "310101",
@@ -1503,10 +1511,13 @@ test("to'plamdan keyin ham klaviatura paydo bo'ladi", async () => {
   const { deps, sent, store } = makeDeps({ f1: okResult(mrz) });
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  assert.ok(
-    sent.some((m) => m.keyboard),
-    "/start bosmagan xodimda ham tugmalar chiqishi kerak",
-  );
+  const withKeyboard = sent.filter((m) => m.keyboard);
+  assert.equal(withKeyboard.length, 1, "aynan bir marta qo'yiladi");
+  assert.deepEqual(withKeyboard[0].keyboard!.rows, [
+    ["🗂 Zip qilib olish", "📊 Excel qilib olish"],
+    ["🔍 Pasport farqlash"],
+  ]);
+  assert.equal(withKeyboard[0].keyboard!.persistent, true);
   store.close();
 });
 

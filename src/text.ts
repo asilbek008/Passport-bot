@@ -736,7 +736,8 @@ export const t = {
 
   /** Pastdagi doimiy tugmalar paydo bo'lganda, bir qatorlik izoh. */
   keyboardHint:
-    "_Pastdagi tugmalar ham shu to'plam uchun — ular doim qo'l ostida turadi._",
+    "_Pastdagi tugmalar ham shu to'plam uchun. Keyingi rasmlarni " +
+    "yuborsangiz, ular yangi to'plam bo'yicha ishlaydi._",
 
   buttons: {
     zip: "🗂 Zip qilib olish",
