@@ -770,11 +770,16 @@ async function sendWorkbook(
 }
 
 /**
- * Rasmlar + Excel'ni bitta arxiv qilib yuboradi.
+ * Hujjat rasmlarini bitta arxiv qilib yuboradi.
  *
  * Arxiv ichida bitta papka bo'ladi (`umra-pasportlar/`), har rasm
  * `FAMILIYA_ISM_turi.jpg` nomi bilan — xodim zip'ni ochib, hujjatlarni
  * qidirmasdan ko'radi.
+ *
+ * EXCEL ARXIVGA KIRMAYDI (egasining talabi). Avval kirardi, lekin
+ * jadval odatda alohida kerak bo'ladi: uni arxivdan chiqarib olish
+ * ortiqcha qadam edi. Jadval `/excel` bilan va hisobot ostidagi tugma
+ * bilan alohida olinadi.
  */
 async function sendArchive(
   chatId: number,
@@ -799,11 +804,12 @@ async function sendArchive(
     entries.push({ path: `${ARCHIVE_FOLDER}/${name}`, data: bytes });
   }
 
-  // Excel ham arxivga kiradi — bitta faylda hammasi
-  entries.push({
-    path: `${ARCHIVE_FOLDER}/${workbookName(now)}`,
-    data: await buildWorkbook(rows, now),
-  });
+  // Birorta rasm yo'q — bo'sh arxiv yuborilmaydi: xodim uni ochib,
+  // ichida hech narsa yo'qligini ko'rib hayron bo'lardi
+  if (entries.length === 0) {
+    await reply(tg, chatId, t.zipNoPhotos(missing));
+    return;
+  }
 
   const zip = makeZip(entries);
   const sizeMb = zip.length / (1024 * 1024);
@@ -817,7 +823,7 @@ async function sendArchive(
     `${ARCHIVE_FOLDER}-${day(now)}.zip`,
     zip,
     t.zipCaption({
-      photos: entries.length - 1,
+      photos: entries.length,
       people: rows.length,
       missing,
       sizeMb,

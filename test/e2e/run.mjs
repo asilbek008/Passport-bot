@@ -806,7 +806,17 @@ async function asosiy() {
       [people[0], people[1]].every((p) => names.some((n) => n.endsWith(p.file))),
       names.map((n) => n.split("/").pop()).join(", "),
     );
-    check("Arxiv ichida Excel ham bor", names.some((n) => n.endsWith(".xlsx")));
+    // Egasining talabi: jadval arxivga KIRMAYDI — u alohida olinadi
+    check(
+      "Arxivda jadval yo'q, faqat rasmlar",
+      !names.some((n) => n.endsWith(".xlsx")) && names.length === 2,
+      names.map((n) => n.split("/").pop()).join(", "),
+    );
+    check(
+      "Izohda jadval qayerdan olinishi aytilgan",
+      /Excel jadval alohida/.test(zip.body.caption ?? ""),
+      (zip.body.caption ?? "").split("\n").filter(Boolean).at(-1),
+    );
 
     const first = zipEntry(archive, people[0].file);
     const size = jpegSize(first);

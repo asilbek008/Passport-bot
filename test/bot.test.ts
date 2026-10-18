@@ -19,6 +19,7 @@ import {
   readdirSync,
   writeFileSync,
   readFileSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -745,7 +746,7 @@ test("ID karta pasportdan ajratiladi", async () => {
   store.close();
 });
 
-test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
+test("/zip faqat rasmlar bilan haqiqiy arxiv beradi", async () => {
   const a = td3({
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB3333333",
     birth: "850412", sex: "M", expiry: "310101",
@@ -767,17 +768,21 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
 
   // Arxivni ochib tekshiramiz (`test/unzip.ts`): o'zimizning o'quvchimiz
   // bilan — hamma joyda, CRC bilan; begona dastur bo'lsa u ham ochadi
-  const expected = [
-    "aziz_karimov_qizil.jpg",
-    "nargiza_salimova_qizil.jpg",
-    "umra-pasportlar-2026-09-29.xlsx",
-  ];
+  //
+  // EXCEL ARXIVDA YO'Q (egasining talabi): faqat hujjat rasmlari
+  const expected = ["aziz_karimov_qizil.jpg", "nargiza_salimova_qizil.jpg"];
 
-  // Arxiv ichida BITTA papka: rasmlar va Excel shunda
+  // Arxiv ichida BITTA papka, ichida faqat rasmlar
+  const inside = Object.keys(readZip(doc.bytes!)).sort();
   assert.deepEqual(
-    Object.keys(readZip(doc.bytes!)).sort(),
+    inside,
     expected.map((name) => `umra-pasportlar/${name}`),
   );
+  assert.ok(
+    !inside.some((name) => name.endsWith(".xlsx")),
+    `arxivga jadval kirib qolgan: ${inside.join(", ")}`,
+  );
+  assert.match(doc.caption, /Excel jadval alohida/, "jadval qayerdaligi aytilsin");
 
   const dir = mkdtempSync(join(tmpdir(), "umra-zip-"));
   const path = join(dir, "a.zip");
@@ -789,6 +794,30 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
       `${UNZIP} boshqa natija berdi`,
     );
   }
+  store.close();
+});
+
+test("birorta rasm bo'lmasa, bo'sh arxiv yuborilmaydi", async () => {
+  // Avval Excel har doim arxivga kirardi, ya'ni arxiv hech qachon bo'sh
+  // bo'lmasdi. Endi faqat rasmlar kiradi — rasmi yo'q bo'lsa xodim bo'sh
+  // arxivni ochib hayron bo'lmasligi kerak
+  const mrz = td3({
+    surname: "RASMSIZOV", given: "OLIM", docNumber: "AB9090909",
+    birth: "900101", sex: "M", expiry: "330101",
+  });
+  const { deps, documents, sent, store } = makeDeps({ f1: okResult(mrz) });
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+  // Rasmni diskdan "qo'lda" o'chiramiz — yozuv qoladi, fayli yo'q
+  const file = store.all()[0].photo_file!;
+  rmSync(join(PHOTOS, file));
+
+  await handleUpdate(textUpdate(OPERATOR, "/zip"), deps as never);
+
+  assert.equal(documents.length, 0, "bo'sh arxiv yuborilmasligi kerak");
+  const text = sent.at(-1)!.text;
+  assert.match(text, /rasm yo'q/);
+  assert.match(text, /\/excel/, "jadval qayerdan olinishini aytsin");
   store.close();
 });
 

@@ -169,7 +169,7 @@ export const t = {
     "*Hamma yozuv bo'yicha:*",
     "`/royxat` — o'qilgan pasportlar ro'yxati",
     "`/excel` — hammasini bitta Excel jadval qilib olish",
-    "`/zip` — hammasini rasmlar bilan arxiv qilib olish",
+    "`/zip` — hamma hujjat rasmini bitta arxiv qilib olish",
     "",
     "*Viza:*",
     "`/viza <pasport> <turi>` — viza belgilash (yoki viza rasmini yuboring)",
@@ -368,19 +368,37 @@ export const t = {
     const lines = [
       `*${p.photos}* rasm · *${p.people}* kishi · ${p.sizeMb.toFixed(1)} MB`,
       "",
-      "Arxiv ichida: har bir hujjat rasmi (nomi — familiya, ism va hujjat turi)",
-      "va Excel jadval.",
+      "Arxiv ichida: har bir hujjat rasmi (nomi — familiya, ism va hujjat turi).",
+      "Excel jadval alohida olinadi — /excel.",
     ];
     if (p.missing.length > 0) {
       lines.push(
         "",
         `⚠️ Rasmi topilmaganlar (${p.missing.length}): ${p.missing.slice(0, 10).join(", ")}` +
           (p.missing.length > 10 ? "…" : ""),
-        "_Ularning ma'lumoti jadvalda bor, faqat rasmi yo'q._",
+        "_Ularning ma'lumoti Excel jadvalda bor, faqat rasmi yo'q._",
       );
     }
     return lines.join("\n");
   },
+
+  /**
+   * Arxivda birorta rasm yo'q.
+   *
+   * Avval Excel har doim arxivga kirardi, ya'ni arxiv hech qachon bo'sh
+   * bo'lmasdi. Endi faqat rasmlar kiradi — rasmi yo'q bo'lsa, bo'sh
+   * arxiv yuborishdan ko'ra nima bo'lganini aytish to'g'ri.
+   */
+  zipNoPhotos: (missing: string[]) =>
+    [
+      "Arxivda yuboradigan rasm yo'q.",
+      "",
+      missing.length > 0
+        ? `Yozuvlar bor, lekin ularning rasmi diskda topilmadi (${missing.length}).`
+        : "Hali birorta hujjat rasmi saqlanmagan.",
+      "",
+      "Ma'lumotlarning o'zi jadvalda bor: /excel",
+    ].join("\n"),
 
   zipTooBig: (sizeMb: number, maxMb: number) =>
     [

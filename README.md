@@ -195,7 +195,7 @@ nima kerakligini o'zingiz tanlaysiz:
 
 | Tugma | Nima beradi |
 |---|---|
-| 🗂 **Zip qilib olish** | Rasmlar + Excel bitta arxivda. Har rasm `ism_familiya_turi.jpg` nomi bilan, hujjatning o'ziga qirqilgan |
+| 🗂 **Zip qilib olish** | Hujjat rasmlari bitta arxivda. Har rasm `ism_familiya_turi.jpg` nomi bilan, hujjatning o'ziga qirqilgan. **Excel arxivga kirmaydi** — u alohida olinadi |
 | 📊 **Excel qilib olish** | Ism, familiya va pasport ma'lumotlari jadvali |
 | 🔍 **Pasport farqlash** | Qaysi biri qizil pasport, qaysi biri ID karta, qaysi davlatniki |
 
@@ -305,7 +305,7 @@ tugmasi qilib ko'rsatadi.
 | `/start` | Boshlash va qisqa yo'riqnoma |
 | `/royxat` | O'qilgan pasportlar ro'yxati |
 | `/excel` | Hammasini bitta Excel jadval qilib beradi |
-| `/zip` | Hammasini rasmlar bilan arxiv qilib beradi |
+| `/zip` | Hamma hujjat rasmini bitta arxiv qilib beradi (jadvalsiz) |
 | `/viza <pasport> <turi>` | Viza belgilaydi |
 | `/vizalar` | Kimda qanday viza bor |
 | `/vizasiz` | Vizasi belgilanmaganlar |
@@ -863,8 +863,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 359 test — bo'laklar alohida
-npm run sinov    # 54 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 360 test — bo'laklar alohida
+npm run sinov    # 55 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
