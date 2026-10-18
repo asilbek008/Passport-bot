@@ -241,6 +241,31 @@ hisoblanadi (odatda botni o'rnatgan odam), ya'ni sozlamaga tegmasa ham
 ishlaydi. Egasi `OPERATORS` ro'yxatida bo'lmasa ham botdan foydalana
 oladi: o'z botidan tashqarida qolib ketmasin.
 
+### Menyuda faqat `/start`
+
+Telegram menyusida (pastdagi ☰ tugma) **faqat `/start`** turadi —
+egasining talabi: asosiy ish buyruqsiz bajariladi (rasm yuboriladi,
+keyin tugmalar bosiladi), uzun ro'yxat esa xodimni chalg'itardi.
+
+Qolgan buyruqlar **yo'qolmagan**: qo'lda yozilsa ishlaydi va hammasi
+`/yordam` ichida turadi.
+
+### Nimadir ishlamasa: `/restart`
+
+`/restart` avval **holatni** ko'rsatadi — bot qancha vaqtdan beri
+ishlayapti, qaysi model bilan o'qiydi, bazada nechta hujjat bor. Ko'pincha
+"bot ishlamayapti" degani boshqa narsa bo'ladi (kalit tugagan, rasm
+noto'g'ri tomonidan olingan), shuning uchun qayta ishga tushirishdan
+oldin shular ko'rsatiladi.
+
+Pastdagi tugma bosilsa bot qayta ishga tushadi: protsess **7** kodi
+bilan to'xtaydi, `2-boshlash.bat` oynasi esa uni 3 soniyada qaytaradi
+(oddiy nosozlikda 10 soniya kutadi — bu ataylab farqli). Saqlangan
+ma'lumotga va sozlamalarga tegilmaydi.
+
+Bot **umuman javob bermasa**, bu buyruq ham yetib bormaydi: unda
+kompyuterdagi `windows\2-boshlash.bat` oynasini qaytadan oching.
+
 ### Barcha buyruqlar
 
 Buyruqlar Telegram menyusida ham turadi (`/` tugmasi). Birinchisi —
@@ -737,8 +762,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 334 test — bo'laklar alohida
-npm run sinov    # 45 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 338 test — bo'laklar alohida
+npm run sinov    # 48 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -757,7 +782,7 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan o'n holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan o'n bir holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
@@ -767,8 +792,9 @@ tomoni xira bo'lganda «teskari qiling» deyilmasligi, va kadrda kichik
 ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi, va
 ID kartaning ikkala tomoni birga yuborilganda bitta hujjat bo'lib,
 xatosiz chiqishi, ochiq pasportda MRZ faqat tasma ko'rinishida
-o'qilishi, va `/profil` bilan `/statistika` ishlashi (ichida mijoz
-ismi yo'qligi ham tekshiriladi).
+o'qilishi, `/profil` bilan `/statistika` ishlashi (ichida mijoz
+ismi yo'qligi ham tekshiriladi), va `/restart` bosilganda botning
+haqiqatan 7 kodi bilan to'xtashi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning
 uchun botni haqiqiy token bilan ishga tushirib `/sinov` yozing — bot uchta

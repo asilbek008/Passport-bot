@@ -92,6 +92,18 @@ export const config = {
       .filter(Boolean);
   },
 
+  /**
+   * Botni ishga tushirgan oyna uni o'zi qaytaradimi.
+   *
+   * `windows\2-boshlash.bat` buni 1 qilib qo'yadi: u tsiklda ishlaydi va
+   * bot to'xtasa qaytadan ko'taradi. Shu tufayli `/restart` dan keyin
+   * xodimga "bir necha soniyada o'zi qaytadi" deb aytish mumkin;
+   * oddiy `npm start` bo'lsa — "kompyuterda qaytadan oching" deyiladi.
+   */
+  get autoRestart(): boolean {
+    return process.env.UMRA_AUTORESTART === "1";
+  },
+
   get dbPath(): string {
     return process.env.DB_PATH ?? "./data/umra.db";
   },

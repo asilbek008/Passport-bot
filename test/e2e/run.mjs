@@ -618,10 +618,15 @@ async function withBot(mode, steps) {
   );
 
   const log = [];
+  const exited = { code: null };
+  bot.on("exit", (code) => {
+    exited.code = code;
+  });
   bot.stdout.on("data", (d) => log.push(d.toString()));
   bot.stderr.on("data", (d) => log.push(d.toString()));
 
   const api = {
+    exited,
     calls,
     geminiHits,
     log,
@@ -1165,6 +1170,40 @@ async function profilVaStatistika() {
   });
 }
 
+// ───── 11. /restart: holat, tasdiq va haqiqiy to'xtash ─────
+
+async function qaytaIshgaTushirish() {
+  console.log("\n11) /restart — holat, tasdiq va botning to'xtashi");
+  await withBot("full", async (bot) => {
+    bot.text("/restart");
+    const ask = await bot.wait(
+      "/restart javobi",
+      (c) => c.method === "sendMessage" && /Bot holati/.test(c.body.text ?? ""),
+    );
+    const buttons = ask.body.reply_markup?.inline_keyboard?.flat() ?? [];
+    check(
+      "Holat ko'rsatildi va tasdiq so'raldi",
+      buttons.length === 1 && /ishlayapti/.test(ask.body.text),
+      (ask.body.text.match(/🤖.*/) ?? [""])[0],
+    );
+    check("Bot hali to'xtamadi", bot.exited.code === null);
+
+    bot.button(buttons[0].callback_data);
+    await bot.wait(
+      "to'xtatish xabari",
+      (c) => c.method === "sendMessage" && /Qayta ishga tushirilmoqda/.test(c.body.text ?? ""),
+    );
+
+    // Protsess haqiqatan to'xtashini kutamiz (1.2 soniya kechikish bor)
+    for (let i = 0; i < 60 && bot.exited.code === null; i++) await sleep(100);
+    check(
+      "Bot haqiqatan to'xtadi (7 kodi bilan)",
+      bot.exited.code === 7,
+      `chiqish kodi: ${bot.exited.code}`,
+    );
+  });
+}
+
 // ───────────────────────── zip o'qish (kutubxonasiz) ─────────────────────────
 
 /** Arxivdagi fayl nomlari. Markaziy katalogdan o'qiladi. */
@@ -1217,6 +1256,7 @@ try {
   await idIkkiTomon();
   await ochiqPasport();
   await profilVaStatistika();
+  await qaytaIshgaTushirish();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);
 }

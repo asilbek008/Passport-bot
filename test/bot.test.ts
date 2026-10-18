@@ -1079,12 +1079,12 @@ test("qayta urinishlar tugasa to'plam to'xtaydi, vaqtincha deb aytiladi", async 
 // /guruh kerak emas, /start va senga rasmlar yuboradi — sen ularni xlsx
 // va .zip qilib tashlab berasan".
 
-test("menyuda /start birinchi turadi, /guruh yo'q", async () => {
+test("menyuda FAQAT /start turadi", async () => {
+  // Egasining talabi: menyu uzun ro'yxat bilan chalg'itmasin. Qolgan
+  // buyruqlar yo'qolmagan — qo'lda yozilsa ishlaydi va /yordam da turadi
   const { COMMANDS } = await import("../src/bot.ts");
   const names = COMMANDS.map((c) => c.command);
-  assert.equal(names[0], "start", "Telegram birinchisini START tugmasi qiladi");
-  assert.ok(!names.includes("guruh"), "guruh buyrug'i olib tashlandi");
-  assert.ok(names.includes("excel") && names.includes("zip"));
+  assert.deepEqual(names, ["start"]);
 });
 
 test("/start qisqa yo'riqnoma beradi, guruh haqida gapirmaydi", async () => {
@@ -2039,4 +2039,78 @@ test("SUPERADMIN ko'rsatilmasa, birinchi xodim egasi bo'ladi", async () => {
   } finally {
     if (before !== undefined) process.env.SUPERADMIN = before;
   }
+});
+
+// ───────────────── /restart ─────────────────
+//
+// Egasining talabi: menyuda faqat /start qolsin, bot ishlamay qolganda
+// esa qayta ishga tushirish buyrug'i bo'lsin.
+
+test("buyruqlar yo'qolmagan: /yordam hammasini sanaydi", async () => {
+  const { t } = await import("../src/text.ts");
+  for (const command of ["/royxat", "/excel", "/zip", "/profil", "/restart"]) {
+    assert.ok(t.help.includes(command), `${command} /yordam da bo'lsin`);
+  }
+});
+
+test("/restart avval holatni ko'rsatadi va tasdiq so'raydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  await handleUpdate(textUpdate(OPERATOR, "/restart"), deps as never);
+
+  const message = sent.at(-1)!;
+  assert.match(message.text, /Bot holati/);
+  assert.match(message.text, /ishlayapti/, "avval nima ishlayotgani aytilsin");
+  assert.match(message.text, /2-boshlash\.bat/, "bot javob bermasa nima qilish");
+  assert.equal(message.buttons?.length, 1, "tasdiq tugmasi bo'lsin");
+  assert.match(message.buttons![0].data, /^qayta:/);
+  store.close();
+});
+
+test("tugma bosilmaguncha bot to'xtamaydi", async () => {
+  let restarted = 0;
+  const { deps, store } = makeDeps({});
+  (deps as Record<string, unknown>).restart = () => {
+    restarted++;
+  };
+
+  await handleUpdate(textUpdate(OPERATOR, "/restart"), deps as never);
+  assert.equal(restarted, 0, "faqat so'rash — hali to'xtatmaydi");
+
+  await handleUpdate(
+    {
+      update_id: 1,
+      callback_query: {
+        id: "cb1",
+        from: { id: OPERATOR },
+        data: "qayta:ha",
+        message: { message_id: 5, chat: { id: OPERATOR, type: "private" } },
+      },
+    } as TgUpdate,
+    deps as never,
+  );
+  assert.equal(restarted, 1, "tugma bosilganda to'xtatiladi");
+  store.close();
+});
+
+test("begona odam botni qayta ishga tushira olmaydi", async () => {
+  let restarted = 0;
+  const { deps, store } = makeDeps({});
+  (deps as Record<string, unknown>).restart = () => {
+    restarted++;
+  };
+
+  await handleUpdate(
+    {
+      update_id: 2,
+      callback_query: {
+        id: "cb2",
+        from: { id: STRANGER },
+        data: "qayta:ha",
+        message: { message_id: 6, chat: { id: STRANGER, type: "private" } },
+      },
+    } as TgUpdate,
+    deps as never,
+  );
+  assert.equal(restarted, 0);
+  store.close();
 });

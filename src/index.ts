@@ -22,6 +22,14 @@ import { handleUpdate, processBatch, COMMANDS, type Deps } from "./bot.ts";
 
 const CODE_TTL_MINUTES = 60;
 
+/**
+ * `/restart` dan keyingi chiqish kodi.
+ *
+ * Windows oynasi shu kodni ko'rsa botni DARHOL qaytaradi (nosozlikdan
+ * keyingi 10 soniyalik kutishsiz).
+ */
+const RESTART_CODE = 7;
+
 /** Sozlamalar to'liqmi — to'liq bo'lmasa o'zbekcha tushuntirib to'xtaydi. */
 function checkSettings(): string[] {
   const problems: string[] = [];
@@ -121,6 +129,26 @@ const deps: Deps = {
   },
   newCode: () => ({ code: invites.create(), minutes: CODE_TTL_MINUTES }),
   throttle,
+  /**
+   * `/restart` — protsessni MAXSUS kod bilan to'xtatadi.
+   *
+   * `windows\2-boshlash.bat` ni oynasi botni qayta ko'taradi: 7 kodi
+   * "ataylab qayta ishga tushirildi" degani, shuning uchun u 10 soniya
+   * emas, 3 soniya kutadi. Oddiy `npm start` bilan ishlatilsa, bot
+   * shunchaki to'xtaydi — xabarda shu aytiladi.
+   */
+  restart: () => {
+    console.log("[restart] xodim so'rovi bilan qayta ishga tushirilmoqda");
+    // DIQQAT: bu yerda `running = false` qilinmaydi. Unda uzun so'rov
+    // tsikli tugab, protsess O'ZI 0 kodi bilan chiqib ketardi — oyna esa
+    // 0 ni "xodim to'xtatdi" deb tushunib, botni qaytarmasdi.
+    batcher.stop();
+    // Telegramga xabar yetib ulgursin
+    setTimeout(() => {
+      releaseLock();
+      process.exit(RESTART_CODE);
+    }, 1200).unref?.();
+  },
 };
 
 let running = true;

@@ -23,6 +23,18 @@ export function esc(s: string): string {
   return s.replace(/([_*`\[\]])/g, "\\$1");
 }
 
+/** Soniyani odam o'qiydigan ko'rinishga keltiradi: "3 soat 12 daqiqa". */
+function duration(seconds: number): string {
+  if (seconds < 60) return `${seconds} soniya`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} daqiqa`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours < 24) return rest > 0 ? `${hours} soat ${rest} daqiqa` : `${hours} soat`;
+  const days = Math.floor(hours / 24);
+  return `${days} kun ${hours % 24} soat`;
+}
+
 export const t = {
   /** Ro'yxatda yo'q odam — botdan hech narsa olmaydi. */
   notOperator: [
@@ -118,7 +130,7 @@ export const t = {
       "Pasportda esa surat bor sahifaning pastida.",
       "",
       saved > 0 ? `_Bazada ${saved} ta pasport bor._\n` : "",
-      "Buyruqlar: /yordam",
+      "Buyruqlar: /yordam · Nimadir ishlamasa: /restart",
       "",
       "*Eslatma:* bu mijozlarning shaxsiy hujjatlari — rasmlar ham,",
       "o'qilgan ma'lumot ham faqat ish uchun ishlatilsin.",
@@ -147,7 +159,8 @@ export const t = {
     "`/profil` — nechta hujjat o'qigansiz, kunlik chegara",
     "`/statistika` — butun bot bo'yicha sonlar (faqat bot egasiga)",
     "",
-    "*Tekshirish:*",
+    "*Nimadir ishlamasa:*",
+    "`/restart` — bot holatini ko'rish va qayta ishga tushirish",
     "`/sinov` — tugmalar ishlayaptimi (hech narsa saqlanmaydi)",
     "",
     "*Tozalash:*",
@@ -729,7 +742,53 @@ export const t = {
     zip: "🗂 Zip qilib olish",
     excel: "📊 Excel qilib olish",
     kinds: "🔍 Pasport farqlash",
+    restart: "🔄 Ha, qayta ishga tushir",
   },
+
+  // --- Qayta ishga tushirish ---
+
+  /**
+   * `/restart` — avval HOLAT ko'rsatiladi.
+   *
+   * "Bot ishlamayapti" ko'pincha boshqa narsa bo'ladi: kalit tugagan,
+   * internet uzilgan, rasm noto'g'ri tomonidan olingan. Shuning uchun
+   * qayta ishga tushirishdan oldin nima ishlayotgani aytiladi — ko'pincha
+   * shundan keyin qayta ishga tushirish kerak ham bo'lmaydi.
+   */
+  restartAsk: (s: {
+    documents: number;
+    provider: string;
+    model: string;
+    uptime: number;
+    crop: boolean;
+  }) =>
+    [
+      "*Bot holati*",
+      "",
+      "✅ Bot ishlayapti va sizni eshitayapti",
+      `⏱ To'xtamasdan: ${duration(s.uptime)}`,
+      `🤖 O'qish: ${esc(s.provider)} / \`${esc(s.model)}\``,
+      `🗂 Bazada: ${s.documents} ta hujjat`,
+      `✂️ Rasmni qirqish: ${s.crop ? "yoqilgan" : "o'chirilgan"}`,
+      "",
+      "Agar shunday bo'lsa-yu, baribir noto'g'ri ishlayotgan bo'lsa —",
+      "pastdagi tugma bilan qayta ishga tushiring. Bu bir necha soniya",
+      "oladi, saqlangan ma'lumotga va sozlamalarga tegmaydi.",
+      "",
+      "_Bot umuman javob bermasa, bu buyruq ham yetib bormaydi:_",
+      "_unda kompyuterdagi `2-boshlash.bat` oynasini qaytadan oching._",
+    ].join("\n"),
+
+  /** Tugma bosilgandan keyin. */
+  restartNow: (auto: boolean) =>
+    [
+      "🔄 *Qayta ishga tushirilmoqda...*",
+      "",
+      auto
+        ? "Bir necha soniyadan keyin bot o'zi qaytadi. Shundan keyin"
+        : "Bot to'xtatildi. Kompyuterda `2-boshlash.bat` ni oching, keyin",
+      "`/start` yozib tekshirib ko'ring.",
+    ].join("\n"),
 
   /** Tugma eskirgan: bot qayta ishga tushgan yoki to'plam o'chirilgan. */
   batchExpired: [

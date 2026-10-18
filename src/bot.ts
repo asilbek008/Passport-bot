@@ -38,6 +38,7 @@ import {
 import type { Store, Pilgrim } from "./store.ts";
 import { Telegram, type TgUpdate, type Button } from "./telegram.ts";
 import type { readDocument } from "./vision.ts";
+import { providerInfo } from "./read.ts";
 import type { ReadResult } from "./read-shared.ts";
 
 export type Deps = {
@@ -57,6 +58,14 @@ export type Deps = {
   throttle?: { wait: () => Promise<void> };
   /** Qayta urinishlar orasida kutish — testda soxta qilinadi */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Botni qayta ishga tushirish (`/restart`).
+   *
+   * `index.ts` beradi: u protsessni maxsus kod bilan to'xtatadi va
+   * Windows'dagi oyna uni bir necha soniyada qaytadan ko'taradi.
+   * Testda soxta qilinadi — test protsessi o'chib qolmasligi kerak.
+   */
+  restart?: () => void | Promise<void>;
   now?: () => Date;
 };
 
@@ -85,19 +94,15 @@ function allowed(chatId: number, store: Store): boolean {
 /**
  * Telegram menyusidagi buyruqlar (`setMyCommands`).
  *
- * `/start` BIRINCHI turadi: xodim botni birinchi marta ochganda Telegram
- * aynan shu buyruqni katta "START" tugmasi qilib ko'rsatadi, menyuda ham
- * eng yuqorida bo'ladi. Ro'yxat qisqa — har kuni kerak bo'ladiganlar;
- * qolganlari /yordam ichida.
+ * Egasining talabi: menyuda FAQAT `/start` qolsin. Asosiy ish buyruqsiz
+ * bajariladi — rasm yuboriladi, keyin tugmalar bosiladi; uzun menyu esa
+ * xodimni chalg'itardi.
+ *
+ * Qolgan buyruqlar (`/royxat`, `/excel`, `/zip`, `/profil`, `/restart`...)
+ * YO'QOLMAGAN — qo'lda yozilsa ishlaydi va hammasi `/yordam` da turadi.
  */
 export const COMMANDS = [
   { command: "start", description: "Boshlash va qisqa yo'riqnoma" },
-  { command: "royxat", description: "O'qilgan pasportlar ro'yxati" },
-  { command: "excel", description: "Hammasini Excel jadval qilib olish" },
-  { command: "zip", description: "Hammasini rasmlar bilan arxiv qilib olish" },
-  { command: "ogohlik", description: "Pasporti tez tugaydiganlar" },
-  { command: "profil", description: "Mening ishim: nechta hujjat o'qildi" },
-  { command: "yordam", description: "Buyruqlar ro'yxati" },
 ];
 
 /** Arxiv ichidagi papka nomi — xodim zip'ni ochganda shu ko'rinadi. */
@@ -151,6 +156,30 @@ function batchButtons(batchId: number): Button[] {
     { text: t.buttons.excel, data: `excel:${batchId}` },
     { text: t.buttons.kinds, data: `farq:${batchId}` },
   ];
+}
+
+/**
+ * Botning hozirgi holati — `/restart` dan oldin ko'rsatiladi.
+ *
+ * Ko'pincha "bot ishlamayapti" degani — API kaliti tugagan yoki
+ * sozlama buzilgan. Shuning uchun qayta ishga tushirishdan oldin
+ * nima ishlayotgani aytiladi.
+ */
+function botState(store: Store): {
+  documents: number;
+  provider: string;
+  model: string;
+  uptime: number;
+  crop: boolean;
+} {
+  const info = providerInfo();
+  return {
+    documents: store.count(),
+    provider: info.name,
+    model: info.model,
+    uptime: Math.round(process.uptime()),
+    crop: config.crop,
+  };
 }
 
 /** Telegram xabar chegarasini hisobga olib yuboradi. */
@@ -297,6 +326,14 @@ async function handleCallback(
   const [action, raw] = (query.data ?? "").split(":");
   if (!action) return;
 
+  // Qayta ishga tushirish — tasdiqlangandan keyin
+  if (action === "qayta") {
+    await deps.tg.sendMessage(chatId, t.restartNow(Boolean(deps.restart) && config.autoRestart));
+    // Xabar yetib borishi uchun avval yuboriladi, keyin to'xtatiladi
+    await deps.restart?.();
+    return;
+  }
+
   // Sinov tugmasi: to'plam ham, fayl ham yo'q — faqat javob
   if (action === "sinov") {
     const labels: Record<string, string> = {
@@ -429,6 +466,19 @@ async function handleCommand(
         return;
       }
       await sendWorkbook(chatId, rows, deps, now);
+      return;
+    }
+
+    // --- Qayta ishga tushirish ---
+
+    case "restart":
+    case "qayta": {
+      // Avval holatni ko'rsatamiz: ko'pincha muammo botda emas, sozlamada
+      await tg.sendMessage(chatId, t.restartAsk(botState(store)), {
+        reply_markup: Telegram.keyboard([
+          { text: t.buttons.restart, data: "qayta:ha" },
+        ]),
+      });
       return;
     }
 

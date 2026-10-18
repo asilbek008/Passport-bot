@@ -25,10 +25,21 @@ echo Oyna yopiq turganda bot ISHLAMAYDI.
 echo.
 
 :qayta
+rem Botga ayting: bu oyna uni o'zi qaytaradi (/restart shuni biladi)
+set UMRA_AUTORESTART=1
 node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts
 set KOD=%errorlevel%
 if %KOD%==0 goto tugadi
 
+rem 7 - xodim /restart bosgan: darhol qaytaramiz
+if not %KOD%==7 goto nosozlik
+echo.
+echo   Qayta ishga tushirilmoqda...
+echo.
+timeout /t 3 /nobreak >nul
+goto qayta
+
+:nosozlik
 echo.
 echo ============================================
 echo   BOT TO'XTADI - 10 soniyadan keyin qayta
