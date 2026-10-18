@@ -796,10 +796,19 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 342 test — bo'laklar alohida
+npm test         # 345 test — bo'laklar alohida
 npm run sinov    # 50 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
+
+Testlar Windows'da ham to'liq ishlaydi. Arxiv (ZIP) formatini o'zimiz
+yozganimiz uchun testlar uni ochib ko'radi: markaziy katalog bo'yicha
+o'zimiz o'qiymiz va CRC ni solishtiramiz (hamma joyda), ustiga shu
+kompyuterdagi dastur ham ochadi — Linux'da `unzip`, Windows'da
+PowerShell'ning `Expand-Archive` si (xodim arxivni Explorer'da
+ochganida ishlatiladigan kod). Dastur yo'q yoki ishlamasa test
+yiqilmaydi, ogohlantirish yoziladi: arxivning o'zi baribir
+tekshirilgan.
 
 ### `npm run sinov` — o'zgarish kiritgandan keyin
 

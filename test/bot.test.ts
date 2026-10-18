@@ -22,7 +22,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { UNZIP, tryUnzipTo, readZip } from "./unzip.ts";
 const PHOTOS = mkdtempSync(join(tmpdir(), "umra-photos-"));
 process.env.PHOTOS_DIR = PHOTOS;
 
@@ -697,20 +697,30 @@ test("/zip rasmlar va Excel bilan haqiqiy arxiv beradi", async () => {
   assert.match(doc.caption, /\*2\* rasm/);
   assert.match(doc.caption, /\*2\* kishi/);
 
-  // Arxivni HAQIQIY unzip bilan ochib tekshiramiz
-  const dir = mkdtempSync(join(tmpdir(), "umra-zip-"));
-  const path = join(dir, "a.zip");
-  writeFileSync(path, doc.bytes!);
-  execFileSync("unzip", ["-t", path], { stdio: "pipe" });
-  execFileSync("unzip", ["-qq", "-o", path, "-d", join(dir, "out")], { stdio: "pipe" });
-
-  // Arxiv ichida BITTA papka: rasmlar va Excel shunda
-  const inside = readdirSync(join(dir, "out", "umra-pasportlar")).sort();
-  assert.deepEqual(inside, [
+  // Arxivni ochib tekshiramiz (`test/unzip.ts`): o'zimizning o'quvchimiz
+  // bilan — hamma joyda, CRC bilan; begona dastur bo'lsa u ham ochadi
+  const expected = [
     "aziz_karimov_qizil.jpg",
     "nargiza_salimova_qizil.jpg",
     "umra-pasportlar-2026-09-29.xlsx",
-  ]);
+  ];
+
+  // Arxiv ichida BITTA papka: rasmlar va Excel shunda
+  assert.deepEqual(
+    Object.keys(readZip(doc.bytes!)).sort(),
+    expected.map((name) => `umra-pasportlar/${name}`),
+  );
+
+  const dir = mkdtempSync(join(tmpdir(), "umra-zip-"));
+  const path = join(dir, "a.zip");
+  writeFileSync(path, doc.bytes!);
+  if (tryUnzipTo(path, join(dir, "out"))) {
+    assert.deepEqual(
+      readdirSync(join(dir, "out", "umra-pasportlar")).sort(),
+      expected,
+      `${UNZIP} boshqa natija berdi`,
+    );
+  }
   store.close();
 });
 
