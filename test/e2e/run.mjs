@@ -331,11 +331,14 @@ async function withBot(mode, steps) {
         // Ochiq pasport: MRZ faqat TASMA ko'rinishida o'qiladi.
         // Tasma — keng va past rasm, shundan ajratamiz
         const body = JSON.parse(raw.toString("utf8"));
-        const part = body.contents?.[0]?.parts?.find((p) => p.inlineData);
-        const bytes = Buffer.from(part.inlineData.data, "base64");
-        const img = jpeg.decode(bytes, { useTArray: true });
-        const isStrip = img.width / img.height > 2.2;
-        geminiHits.push(isStrip ? `tasma ${img.width}x${img.height}` : `to'liq ${img.width}x${img.height}`);
+        const pictures = (body.contents?.[0]?.parts ?? [])
+          .filter((p) => p.inlineData)
+          .map((p) => jpeg.decode(Buffer.from(p.inlineData.data, "base64"), { useTArray: true }));
+        // Model qatorlarni faqat TASMA ko'rinishidagi rasmdan o'qiydi
+        const isStrip = pictures.some((img) => img.width / img.height > 2.2);
+        geminiHits.push(
+          `${pictures.length} rasm` + (isStrip ? " (tasma bor)" : " (tasmasiz)"),
+        );
         return send({
           candidates: [
             {
@@ -1129,11 +1132,10 @@ async function ochiqPasport() {
     const report = bot.reports();
     check("Pasport o'qildi", /1 \/ 1 o'qildi/.test(report) && /BOYQOBILOV/.test(report));
     check(
-      "Uchinchi urinishda MRZ tasmasi yuborildi",
-      bot.geminiHits.length === 3 && bot.geminiHits[2].startsWith("tasma"),
+      "MRZ tasmasi BIRINCHI so'rovda ketdi (bitta so'rov yetdi)",
+      bot.geminiHits.length === 1 && bot.geminiHits[0].includes("tasma bor"),
       bot.geminiHits.join(" → "),
     );
-    check("Hisobotda yaqindan o'qilgani aytildi", /yaqindan qayta o'qildi/.test(report));
   });
 }
 

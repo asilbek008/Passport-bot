@@ -448,8 +448,15 @@ Qaysi tomoni ekanini model aytadi (`id_side`). Bu muhim: orqa tomonini
 yuborgan odamga «teskari qiling» desak, u kartani aylantirib
 yuraveradi va muammo hech qachon hal bo'lmaydi.
 
-**Birinchi urinishda o'qilmasa — hujjatga kesib, yaqindan qayta
-o'qiladi.** Modellar rasmni o'z o'lchamiga kichraytirib oladi. Xodim ID
+**MRZ tasmasi BIRINCHI so'rovdayoq yuboriladi.** Modellar rasmni o'z
+o'lchamiga kichraytiradi. Ochiq pasportda MRZ kadrning 5-10 foizi
+bo'ladi va kichraytirishdan keyin qatorlar o'qilmay qoladi. Shuning
+uchun bot **ikkita rasm** yuboradi: butun kadr va uning pastki yarmi
+(MRZ odatda shu yerda). Ikkalasi bitta so'rovda ketadi — ya'ni
+qo'shimcha kutish yo'q, aksincha: avval bu uchinchi urinishda qilinardi
+va bitta hujjat uchun uchta so'rov ketardi.
+
+**Baribir o'qilmasa — hujjatga kesib, bir marta qayta so'raladi.** Modellar rasmni o'z o'lchamiga kichraytirib oladi. Xodim ID
 kartani kadrning uchdan birida suratga olsa, kichraytirishdan keyin MRZ
 qatorlari bir necha pikselga tushib qoladi va o'qilmaydi — hujjat esa
 odam ko'ziga aniq ko'rinib turadi. Pasportda bu kamroq uchraydi (u
@@ -461,15 +468,9 @@ butun kadrni egallaydi va MRZ bir necha barobar yirik bo'ladi. Hisobotda
 "N tasi yaqindan qayta o'qildi" deb aytiladi — xodim keyingi safar
 hujjatni kadrga to'ldirib oladi.
 
-**Uchinchi urinish: faqat MRZ tasmasi.** Pasport OCHIQ holda suratga
-olinsa (ikki sahifa ko'rinib tursa), hujjatning o'zi kadrning yarmi
-bo'ladi, MRZ esa uning pastki 5-10 foizi — hujjatga kesganda ham MRZ
-kichik qolaveradi. Shuning uchun oxirgi urinishda **faqat MRZ zonasi**
-(hujjatning pastki 45 foizi) kesib yuboriladi: endi qatorlar butun
-rasmni egallaydi. Modelga bu rasm MRZ zonasining yaqin surati ekani
-aytiladi, aks holda u "hujjat emas" deb belgilab qo'yardi. Model hujjat
-chegarasini umuman aytmagan bo'lsa ham tasma sinab ko'riladi — MRZ
-deyarli har doim kadrning pastki qismida bo'ladi.
+Qayta so'rovda ham ikkita rasm ketadi: hujjatning o'zi va uning pastki
+qismi — MRZ yana bir necha barobar yiriklashadi. Ko'pi bilan **ikki
+so'rov**: har qo'shimcha so'rov butun to'plamni sekinlashtiradi.
 
 Qayta urinish faqat "ko'rinmadi" turidagi sabablarda bo'ladi. ID
 kartaning **old tomoni** yuborilgan bo'lsa yoki rasmda hujjat umuman
@@ -505,8 +506,15 @@ oxirida "bo'lmadi" degan javob olishdan yaxshiroq.
 
 ### Ko'p rasm yuborilganda: tezlik va chegara
 
+Rasmlar **bir vaqtda** o'qiladi (`CONCURRENCY`, standart 3). Eng sekin
+qism — API javobi (3-8 soniya); ketma-ket kutilganda 11 rasm bir necha
+daqiqa olardi.
+
 Bot API'ga **daqiqada `REQUESTS_PER_MINUTE` so'rov** yuboradi va so'rovlarni
-teng taqsimlaydi:
+teng taqsimlaydi. Tarifingizni bot bilmaydi, shuning uchun tezroq
+boshlaydi (Gemini uchun 30) va **chegaraga urilsa o'zi sekinlashadi**,
+keyin muvaffaqiyatli so'rovlardan keyin asta tiklanadi. Bepul tarifda
+ham to'plam to'xtamaydi — shunchaki sekinroq bo'ladi.
 
 | Provayder | Standart | Nega |
 |---|---|---|
@@ -766,8 +774,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 338 test — bo'laklar alohida
-npm run sinov    # 49 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 340 test — bo'laklar alohida
+npm run sinov    # 48 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 

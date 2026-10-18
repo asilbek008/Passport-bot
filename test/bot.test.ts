@@ -34,6 +34,15 @@ const { Invites } = await import("../src/invites.ts");
 import type { Telegram, TgUpdate } from "../src/telegram.ts";
 import type { ReadResult } from "../src/vision.ts";
 
+/**
+ * Testlarda rasmlar KETMA-KET o'qiladi.
+ *
+ * Soxta `read` qaysi rasm so'ralayotganini `download` orqali biladi,
+ * ya'ni parallel bajarilganda ular aralashib ketadi. Parallellikning
+ * o'zi alohida testda tekshiriladi ("bir vaqtda o'qiladi").
+ */
+process.env.CONCURRENCY = "1";
+
 const REF = new Date("2026-09-29T00:00:00Z");
 const OPERATOR = 111;
 const STRANGER = 999;
@@ -220,10 +229,17 @@ function makeDeps(
   };
   /** Har rasm bo'yicha nechta so'rov ketdi — qayta urinishni sanash uchun */
   const calls: Record<string, number> = {};
-  /** Modelga yuborilgan rasmlar — qaysi ko'rinishda ketgani uchun */
-  const images: { bytes: Uint8Array; mime: string }[] = [];
-  deps.read = (async (image: { bytes: Uint8Array; mime: string }) => {
-    if (image?.bytes) images.push(image);
+  /**
+   * Modelga yuborilgan rasmlar: HAR SO'ROV uchun bitta ro'yxat.
+   * Birinchi so'rovda ikkita rasm ketadi (butun kadr + MRZ tasmasi).
+   */
+  const images: { bytes: Uint8Array; mime: string }[][] = [];
+  deps.read = (async (image: unknown) => {
+    const group = (Array.isArray(image) ? image : [image]) as {
+      bytes: Uint8Array;
+      mime: string;
+    }[];
+    if (group[0]?.bytes) images.push(group);
     const setting = reads[currentFile];
     if (!setting) throw new Error(`test sozlanmagan: ${currentFile}`);
     const seen = calls[currentFile] ?? 0;
@@ -1720,11 +1736,10 @@ test("ID kartaning old tomonida qayta urinilmaydi — bekorga pul ketmasin", asy
   store.close();
 });
 
-test("chegara aytilmagan bo'lsa ham MRZ tasmasi sinab ko'riladi", async () => {
-  // Model hujjat qayerdaligini aytmasa, hujjatga kesib bo'lmaydi. Lekin
-  // MRZ deyarli har doim kadrning pastki qismida bo'ladi — shuning uchun
-  // tasma baribir yuboriladi. Egasining ochiq pasport rasmlarida model
-  // chegarani aytmasligi mumkin, shunda ham o'qilishi kerak
+test("MRZ tasmasi BIRINCHI so'rovning o'zida yuboriladi", async () => {
+  // Avval tasma faqat uchinchi urinishda ketardi: bitta hujjat uchun
+  // uchta so'rov, ya'ni sekin va qimmat. Endi u birinchi so'rovda
+  // asosiy rasm bilan BIRGA ketadi
   const { decode } = await import("jpeg-js");
   const source = await smallDocumentJpeg();
   const { deps, store, calls, images } = makeDeps(
@@ -1734,12 +1749,15 @@ test("chegara aytilmagan bo'lsa ham MRZ tasmasi sinab ko'riladi", async () => {
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  assert.equal(calls.f1, 2, "asl rasm va MRZ tasmasi");
-  const strip = decode(images[1].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
-  const full = decode(images[0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  // Chegara aytilmagan — qayta urinish mumkin emas, bitta so'rov
+  assert.equal(calls.f1, 1, "chegara yo'q — qayta so'rov yubormaymiz");
+  assert.equal(images[0].length, 2, "birinchi so'rovda ikkita rasm");
+
+  const full = decode(images[0][0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  const strip = decode(images[0][1].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
   assert.ok(
-    strip.height < full.height * 0.6 && strip.width / strip.height > 1.5,
-    `tasma keng va past bo'lsin: ${strip.width}x${strip.height}`,
+    strip.height < full.height * 0.6 && strip.width === full.width,
+    `tasma kadrning pastki qismi bo'lsin: ${strip.width}x${strip.height}`,
   );
   assert.equal(store.count(), 0);
   store.close();
@@ -1764,9 +1782,9 @@ test("qayta urinishlar ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  // Hujjatga kesib, keyin MRZ tasmasini ham yuboradi — ikkisi ham
-  // o'qimasa, xodimga BIRINCHI urinishning aniq sababi aytiladi
-  assert.equal(calls.f1, 3);
+  // Birinchi so'rov (kadr + tasma) va qayta urinish (hujjat + tasma) —
+  // ikkisi ham o'qimasa, xodimga BIRINCHI urinishning sababi aytiladi
+  assert.equal(calls.f1, 2);
   const report = edits.map((e) => e.text).join("\n");
   assert.match(report, /yaqinroqdan/, "birinchi urinishning aniq sababi qolsin");
   assert.equal(store.count(), 0);
@@ -1860,7 +1878,7 @@ test("ID karta o'qilmagan bo'lsa, MRZ'siz rasm xato bo'lib qoladi", async () => 
 // o'qilmas bo'lib qoladi — hujjatga kesganda ham kichik qolaveradi.
 // Oxirgi urinishda faqat MRZ zonasi kesib yuboriladi.
 
-test("hujjatga kesish yordam bermasa, faqat MRZ tasmasi yuboriladi", async () => {
+test("qayta urinishda hujjat va uning tasmasi yuboriladi", async () => {
   const { encode, decode } = await import("jpeg-js");
   const mrz = td3({
     surname: "TASMAYEV", given: "BOBUR", docNumber: "FB1212121",
@@ -1892,29 +1910,34 @@ test("hujjatga kesish yordam bermasa, faqat MRZ tasmasi yuboriladi", async () =>
   };
 
   const { deps, store, calls, images, edits } = makeDeps(
-    // 1: asl rasm — o'qilmadi, 2: hujjatga kesilgan — ham o'qilmadi,
-    // 3: MRZ tasmasi — o'qildi
-    { f1: [fail, fail, okResult(mrz)] },
+    // 1-so'rov: butun kadr + tasma — o'qilmadi
+    // 2-so'rov: hujjatga kesilgan + uning tasmasi — o'qildi
+    { f1: [fail, okResult(mrz)] },
     source,
   );
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  assert.equal(calls.f1, 3, "uchta urinish bo'lishi kerak");
-  assert.equal(store.count(), 1, "uchinchi urinishda o'qilgani saqlansin");
+  assert.equal(calls.f1, 2, "ikkita so'rov: kadr va hujjat");
+  assert.equal(store.count(), 1, "qayta urinishda o'qilgani saqlansin");
   assert.equal(store.all()[0].surname, "TASMAYEV");
 
-  // Uchinchi rasm — keng va past tasma bo'lishi kerak
-  assert.equal(images.length, 3);
-  const second = decode(images[1].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
-  const third = decode(images[2].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  // Har so'rovda ikkita rasm: ko'rinish va MRZ zonasi
+  assert.equal(images[0].length, 2);
+  assert.equal(images[1].length, 2);
+
+  const kadr = decode(images[0][0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
+  const hujjat = decode(images[1][0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
   assert.ok(
-    third.height < second.height / 1.8,
-    `tasma hujjatdan ancha past bo'lsin: ${second.height} → ${third.height}`,
+    hujjat.width < kadr.width,
+    `ikkinchi so'rovda hujjatga kesilsin: ${kadr.width} → ${hujjat.width}`,
   );
+  const hujjatTasma = decode(images[1][1].bytes as Uint8Array<ArrayBuffer>, {
+    useTArray: true,
+  });
   assert.ok(
-    third.width / third.height > 1.5,
-    `tasma keng bo'lsin: ${third.width}x${third.height}`,
+    hujjatTasma.height < hujjat.height * 0.7,
+    `tasma hujjatning pastki qismi bo'lsin: ${hujjat.height} → ${hujjatTasma.height}`,
   );
 
   assert.match(edits.map((e) => e.text).join("\n"), /yaqindan qayta o'qildi/);
@@ -2124,4 +2147,64 @@ test("begona odam botni qayta ishga tushira olmaydi", async () => {
   );
   assert.equal(restarted, 0);
   store.close();
+});
+
+// ───────────── Tezlik: rasmlar bir vaqtda o'qiladi ─────────────
+//
+// Egasining shikoyati: 11 rasm juda uzoq o'qildi. Eng sekin qism — API
+// javobi (3-8 soniya). Avval ular ketma-ket kutilardi; endi bir nechtasi
+// birga ketadi.
+
+test("rasmlar bir vaqtda o'qiladi, ketma-ket emas", async () => {
+  const before = process.env.CONCURRENCY;
+  process.env.CONCURRENCY = "4";
+  try {
+    const { deps, store } = makeDeps({});
+
+    let inFlight = 0;
+    let peak = 0;
+    let started = 0;
+    // Soxta o'qish: har biri 40 ms "ishlaydi"
+    (deps as Record<string, unknown>).read = async () => {
+      started++;
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 40));
+      inFlight--;
+      return { ok: false, reason: "unreadable", problem: "sinov" } as const;
+    };
+
+    const files = Array.from({ length: 8 }, (_, i) => `f${i}`);
+    const startedAt = Date.now();
+    await processBatch(OPERATOR, files, deps as never);
+    const took = Date.now() - startedAt;
+
+    assert.equal(started, 8, "hamma rasm o'qilishi kerak");
+    assert.ok(peak > 1, `bir vaqtda bir nechtasi ketsin: eng ko'pi ${peak}`);
+    assert.ok(peak <= 4, `chegaradan oshmasin: ${peak}`);
+    // Ketma-ket bo'lsa 8 × 40 = 320 ms dan ko'p bo'lardi
+    assert.ok(took < 280, `tezroq bo'lishi kerak: ${took} ms`);
+    store.close();
+  } finally {
+    process.env.CONCURRENCY = before ?? "1";
+  }
+});
+
+test("chegaraga urilganda taqsimlagich sekinlashadi, keyin tiklanadi", async () => {
+  const { Throttle } = await import("../src/throttle.ts");
+  const throttle = new Throttle(60); // 1 soniyalik oraliq
+  assert.equal(throttle.interval, 1000);
+
+  throttle.slowDown();
+  assert.equal(throttle.interval, 2000, "chegarada ikki barobar sekin");
+  throttle.slowDown();
+  assert.equal(throttle.interval, 4000);
+
+  throttle.speedUp();
+  assert.ok(
+    throttle.interval < 4000 && throttle.interval >= 1000,
+    `asta tiklanishi kerak: ${throttle.interval}`,
+  );
+  for (let i = 0; i < 20; i++) throttle.speedUp();
+  assert.equal(throttle.interval, 1000, "sozlamadagi tezlikdan oshmaydi");
 });

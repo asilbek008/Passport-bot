@@ -909,6 +909,26 @@ export type CropResult = {
   lowRes: boolean;
 };
 
+/**
+ * Kadrning PASTKI qismini kesib beradi — MRZ odatda shu yerda.
+ *
+ * Bu rasm modelga ASOSIY rasm bilan BIRGA yuboriladi: model ikkalasini
+ * ko'radi — umumiy ko'rinish va MRZ qatorlarining yaqin surati. Shu
+ * tufayli ochiq pasport (MRZ kadrning 5 foizi) birinchi so'rovdayoq
+ * o'qiladi va qayta urinish kerak bo'lmaydi: ham tezroq, ham arzonroq.
+ */
+export function bottomStrip(
+  image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
+  share = 0.5,
+): Uint8Array<ArrayBuffer> | null {
+  const part = clamp(share, 0.2, 0.9);
+  const cut = cropToDocument(image, {
+    box: { x0: 0, y0: (1 - part) * 1000, x1: 1000, y1: 1000 },
+    exact: true,
+  });
+  return cut.cropped ? cut.bytes : null;
+}
+
 export type CropOptions = {
   /**
    * Berilgan chegarani AYNAN kesadi: shakl tekshiruvlari, piksel

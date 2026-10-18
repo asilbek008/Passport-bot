@@ -104,6 +104,21 @@ export const config = {
     return process.env.UMRA_AUTORESTART === "1";
   },
 
+  /**
+   * Bir vaqtda nechta rasm o'qiladi.
+   *
+   * Eng sekin qism — API javobi (3-8 soniya). Ketma-ket kutilganda
+   * 11 rasm bir necha daqiqa olardi. Bir nechtasi birga yuborilsa,
+   * vaqt shuncha barobar qisqaradi.
+   *
+   * 3 — ehtiyotkor standart: bepul tarifdagi chegarani portlatmaydi
+   * (taqsimlagich baribir oraliq saqlaydi), lekin sezilarli tez.
+   * Pullik tarifda 5-8 qilsa bo'ladi.
+   */
+  get concurrency(): number {
+    return Math.max(1, Math.min(12, num("CONCURRENCY", 3)));
+  },
+
   get dbPath(): string {
     return process.env.DB_PATH ?? "./data/umra.db";
   },
@@ -167,9 +182,12 @@ export const config = {
    */
   get requestsPerMinute(): number {
     const given = process.env.REQUESTS_PER_MINUTE;
-    if (given !== undefined) return num("REQUESTS_PER_MINUTE", 10);
-    // Berilmasa: Gemini'da ehtiyotkor, Anthropic'da erkinroq
-    return this.provider === "gemini" ? 10 : 40;
+    if (given !== undefined) return num("REQUESTS_PER_MINUTE", 30);
+    // Berilmasa: tarifni oldindan bilmaymiz, shuning uchun TEZROQ
+    // boshlanadi va chegaraga urilsa taqsimlagich o'zi sekinlashadi
+    // (`Throttle.slowDown`). Avval bu yerda 10 turardi — ya'ni har
+    // so'rov orasida 6 soniya, 11 rasm bir necha daqiqa olardi.
+    return this.provider === "gemini" ? 30 : 60;
   },
 
   /**

@@ -29,7 +29,10 @@ const realSleep: Sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * 3 daqiqada o'qilsa ham bo'ladi, lekin to'xtab qolmasligi kerak.
  */
 export class Throttle {
-  private readonly intervalMs: number;
+  /** Hozirgi oraliq. Chegaraga urilsa KATTALASHADI, keyin asta tiklanadi. */
+  private intervalMs: number;
+  /** Sozlamada berilgan oraliq — tiklanish shu darajagacha boradi. */
+  private readonly baseMs: number;
   private readonly now: Clock;
   private readonly sleep: Sleep;
   private nextAllowedAt = 0;
@@ -38,8 +41,27 @@ export class Throttle {
 
   constructor(perMinute: number, now: Clock = Date.now, sleep: Sleep = realSleep) {
     this.intervalMs = perMinute > 0 ? Math.ceil(60_000 / perMinute) : 0;
+    this.baseMs = this.intervalMs;
     this.now = now;
     this.sleep = sleep;
+  }
+
+  /**
+   * API chegarasiga urildik — sekinlashamiz.
+   *
+   * Nega kerak: xodimning tarifi qanday ekanini oldindan bilmaymiz.
+   * Sozlamada tezroq qiymat turadi (ish tez bo'lsin), chegaraga urilsa
+   * esa bot O'ZI sekinlashadi va to'plam to'xtamaydi.
+   */
+  slowDown(): void {
+    if (this.intervalMs === 0) this.intervalMs = 1000;
+    this.intervalMs = Math.min(this.intervalMs * 2, 15_000);
+  }
+
+  /** Muvaffaqiyatli so'rovdan keyin asta-sekin tezlashamiz. */
+  speedUp(): void {
+    if (this.intervalMs <= this.baseMs) return;
+    this.intervalMs = Math.max(this.baseMs, Math.round(this.intervalMs * 0.8));
   }
 
   /** Navbat kelguncha kutadi. */

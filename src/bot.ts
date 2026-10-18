@@ -23,7 +23,7 @@ import { pickPhoto, documentFits } from "./image-pick.ts";
 import { makeZip, type ZipEntry } from "./zip.ts";
 import {
   cropToDocument,
-  quadBounds,
+  bottomStrip,
   type Box,
   type Quad,
   type Rotation,
@@ -54,8 +54,18 @@ export type Deps = {
   tryClaim?: (chatId: number, text: string) => boolean;
   /** Hamkasb uchun yangi bir martalik kod yaratadi. `index.ts` beradi. */
   newCode?: () => { code: string; minutes: number };
-  /** So'rovlarni taqsimlaydi (API chegarasiga urilmaslik uchun) */
-  throttle?: { wait: () => Promise<void> };
+  /**
+   * So'rovlarni taqsimlaydi (API chegarasiga urilmaslik uchun).
+   *
+   * `slowDown` — chegaraga urilganda sekinlashtirish, `speedUp` —
+   * muvaffaqiyatdan keyin asta tiklanish. Ikkalasi ixtiyoriy: testdagi
+   * soxta taqsimlagichda bo'lmasligi mumkin.
+   */
+  throttle?: {
+    wait: () => Promise<void>;
+    slowDown?: () => void;
+    speedUp?: () => void;
+  };
   /** Qayta urinishlar orasida kutish — testda soxta qilinadi */
   sleep?: (ms: number) => Promise<void>;
   /**
@@ -833,24 +843,26 @@ export async function processBatch(
    */
   const savedDocs: string[] = [];
 
-  for (let i = 0; i < fileIds.length; i++) {
-    // Nima bo'layotgani KO'RINIB tursin.
-    //
-    // Avval progress faqat 3 rasmdan ko'p bo'lganda va har 3-tasida
-    // yangilanardi. Bitta rasm yuborilganda esa "o'qilmoqda..." yozuvi
-    // boshdan oxirigacha o'zgarmasdi — ishlayotgan bot ham qotgandek
-    // ko'rinardi. Endi kichik to'plamda har rasmda yangilanadi
-    // (Telegram chekloviga urilmaydi: 3-5 ta yangilanish arzimas).
-    if (i > 0 && (fileIds.length <= 5 || i % 3 === 0)) {
-      await tg.editMessage(
-        chatId,
-        progress.message_id,
-        t.progress(i, fileIds.length),
-      );
-    }
+  // ── 1-BOSQICH: O'QISH, bir vaqtda bir nechta rasm.
+  //
+  // Eng sekin qism shu yerda: API javobi 3-8 soniya, ustiga chegara
+  // oralig'i qo'shiladi. Ketma-ket kutilganda 11 rasm bir necha daqiqa
+  // olardi. Endi bir nechtasi birga ketadi — vaqt bir necha barobar
+  // qisqaradi, chegaraga urilsa esa taqsimlagich o'zi sekinlashadi.
+  // `api` bu yerga tushmaydi — unda butun to'plam to'xtaydi
+  const outcomes: (Exclude<Outcome, { kind: "api" }> | null)[] = new Array(
+    fileIds.length,
+  ).fill(null);
+  let finished = 0;
+  type Stop = { why: string; retryable: boolean };
+  // Closure ichida to'ldiriladi, shuning uchun alohida obyekt
+  const stop: { value: Stop | null } = { value: null };
 
+  await pool(fileIds.length, config.concurrency, async (i) => {
+    if (stop.value) return;
     // So'rovlarni taqsimlaymiz — API chegarasiga urilmaslik uchun
     await deps.throttle?.wait();
+    if (stop.value) return;
 
     // Vaqtincha xato (chegara, server band) bo'lsa qayta urinamiz:
     // 30 rasmlik to'plam bitta "band" javobidan to'xtamasligi kerak
@@ -861,33 +873,65 @@ export async function processBatch(
         tries: 3,
         baseMs: 2000,
         sleep: deps.sleep,
-        // Qayta urinish 90 soniyagacha cho'zilishi mumkin — jim
-        // turmaymiz, aks holda qotib qolgandek ko'rinadi
-        onRetry: (attemptNo, tries) =>
-          tg.editMessage(
+        onRetry: (attemptNo, tries) => {
+          // Chegaraga urildik: butun to'plam sekinlashadi, lekin
+          // to'xtamaydi. Keyin muvaffaqiyatli so'rovlarda tiklanadi
+          deps.throttle?.slowDown?.();
+          return tg.editMessage(
             chatId,
             progress.message_id,
             t.retrying(i + 1, fileIds.length, attemptNo, tries),
-          ),
+          );
+        },
       },
     );
     const outcome = attempt.value;
 
-    // API ishlamasa to'plamni to'xtatamiz: qolgan 29 rasmni o'qishga
+    // API ishlamasa to'plamni to'xtatamiz: qolgan rasmlarni o'qishga
     // urinish ham shu xato bilan tugaydi, faqat pul va vaqt ketadi
     if (outcome.kind === "api") {
+      stop.value ??= { why: outcome.why, retryable: outcome.retryable };
+      return;
+    }
+
+    deps.throttle?.speedUp?.();
+    outcomes[i] = outcome;
+    finished++;
+
+    // Nima bo'layotgani KO'RINIB tursin: bitta rasm yuborilganda ham
+    // "o'qilmoqda..." yozuvi o'zgarmasa, ishlayotgan bot qotgandek
+    // ko'rinadi
+    if (fileIds.length > 1) {
       await tg.editMessage(
         chatId,
         progress.message_id,
-        t.apiStopped({
-          why: outcome.why,
-          done: ok.length,
-          total: fileIds.length,
-          retryable: outcome.retryable,
-        }),
+        t.progress(finished, fileIds.length),
       );
-      return;
     }
+  });
+
+  if (stop.value) {
+    await tg.editMessage(
+      chatId,
+      progress.message_id,
+      t.apiStopped({
+        why: stop.value.why,
+        done: outcomes.filter((o) => o?.kind === "ok").length,
+        total: fileIds.length,
+        retryable: stop.value.retryable,
+      }),
+    );
+    return;
+  }
+
+  // ── 2-BOSQICH: SAQLASH, ketma-ket.
+  //
+  // Bu yer tez (tarmoq yo'q), lekin TARTIB muhim: fayl nomlari bir-biriga
+  // qarab beriladi (bir xil ismli ikki kishi bo'lsa, ikkinchisiga pasport
+  // raqami qo'shiladi), shuning uchun parallel bajarilmaydi.
+  for (let i = 0; i < fileIds.length; i++) {
+    const outcome = outcomes[i];
+    if (!outcome) continue;
 
     if (outcome.kind === "failed") {
       fails.push({
@@ -1213,88 +1257,53 @@ async function closerLook(
   const box = keep.box;
   const quad = keep.quad;
 
-  // ── 2-urinish: hujjatning o'zi.
-  // Model hujjat qayerdaligini aytmagan bo'lsa, bu urinish o'tkazib
-  // yuboriladi — lekin MRZ tasmasi (3-urinish) baribir sinab ko'riladi:
-  // MRZ deyarli har doim kadrning pastki qismida bo'ladi.
-  // Chet kengroq (6%): MRZ hujjatning eng chetida, kesib qo'ymaylik
-  const closer =
-    box || quad
-      ? cropToDocument(image, { box, quad, marginPct: 6 })
-      : { cropped: false as const, bytes: image.bytes };
-  if (closer.cropped) {
-    // Chegara shu yerda ham hisoblanadi: ikkinchi so'rov ham API
-    // chegarasiga kiradi
-    await deps.throttle?.wait();
-    const second = await deps.read({ bytes: closer.bytes, mime: "image/jpeg" }, now);
-    if (second.ok) return { result: second, zoomed: true, box, quad };
-  }
-
-  // ── 3-urinish: FAQAT MRZ TASMASI
+  // ── Qayta urinish: HUJJATGA kesib, yana ikkita rasm bilan.
   //
-  // Pasport OCHIQ holda suratga olinsa (ikki sahifa ko'rinib tursa),
-  // hujjatning o'zi kadrning yarmi bo'ladi, MRZ esa uning pastki 5-10
-  // foizi. Hujjatga kesganda ham MRZ kichik qolaveradi — model rasmni
-  // o'z o'lchamiga kichraytirganda qatorlar o'qilmay qoladi.
+  // Birinchi so'rovda butun kadr va uning pastki yarmi ketgan edi.
+  // Endi hujjatning o'zi va o'sha hujjatning pastki qismi yuboriladi:
+  // MRZ yana bir necha barobar yiriklashadi.
   //
-  // Shuning uchun oxirgi urinishda FAQAT MRZ zonasi — hujjatning pastki
-  // qismi — kesib yuboriladi: endi qatorlar butun rasmni egallaydi.
-  const strip = mrzStrip(box ?? (quad ? quadBounds(quad) : null), rotationOf(first));
-  if (!strip) return keep;
+  // Bitta qayta urinish — ataylab: har qo'shimcha so'rov butun to'plamni
+  // sekinlashtiradi va pul ketadi. Ikki xil yaqinlik yetarli.
+  if (!box && !quad) return keep;
 
-  const cut = cropToDocument(image, {
-    box: strip.box,
-    rotation: strip.rotation,
-    marginPct: 2,
-    // Tasma keng va past: hujjat shakliga o'xshamaydi, shuning uchun
-    // odatdagi tekshiruvlarsiz kesiladi. Bu rasm faqat O'QISH uchun,
-    // arxivga tushmaydi
-    exact: true,
-  });
-  if (!cut.cropped) return keep;
+  const closer = cropToDocument(image, { box, quad, marginPct: 6 });
+  if (!closer.cropped) return keep;
+
+  const closerImage = { bytes: closer.bytes, mime: "image/jpeg" };
+  const closerStrip = bottomStrip(closerImage, 0.55);
 
   await deps.throttle?.wait();
-  const third = await deps.read(
-    { bytes: cut.bytes, mime: "image/jpeg" },
+  const second = await deps.read(
+    closerStrip
+      ? [closerImage, { bytes: closerStrip, mime: "image/jpeg" }]
+      : closerImage,
     now,
-    "mrz_strip",
   );
-  return third.ok ? { result: third, zoomed: true, box, quad } : keep;
-}
-
-/** Model aytgan burilish (nosozlikda ko'rsatilmaydi — 0 bo'ladi). */
-function rotationOf(result: ReadResult): Rotation {
-  return result.ok ? result.rotation : 0;
+  return second.ok ? { result: second, zoomed: true, box, quad } : keep;
 }
 
 /**
- * MRZ zonasi — hujjatning pastki qismi.
+ * Vazifalarni bir vaqtda `size` tadan bajaradi.
  *
- * MRZ har doim ma'lumot sahifasining ENG PASTIDA bo'ladi, shuning uchun
- * chegaraning pastki 45 foizi olinadi (sahifa qiyshiq tursa ham sig'adi).
- * Hujjat teskari turgan bo'lsa (180°) — yuqori qismi.
- *
- * Yonboshlagan rasmda (90/270) MRZ yon tomonda bo'ladi va bu oddiy
- * hisob ishlamaydi: unda tasma olinmaydi.
+ * Oddiy navbat: har "ishchi" keyingi raqamni oladi va tugatgach yana
+ * oladi. Shu tufayli sekin rasm boshqalarini ushlab turmaydi.
  */
-function mrzStrip(
-  box: Box | null,
-  rotation: Rotation,
-): { box: Box; rotation: Rotation } | null {
-  if (rotation === 90 || rotation === 270) return null;
-  // Chegara yo'q bo'lsa butun kadrni olamiz: MRZ odatda pastda
-  const area = box ?? { x0: 0, y0: 0, x1: 1000, y1: 1000 };
-  const height = area.y1 - area.y0;
-  if (height < 100) return null;
-
-  const cut = height * 0.45;
-  return {
-    box:
-      rotation === 180
-        ? { ...area, y1: area.y0 + cut }
-        : { ...area, y0: area.y1 - cut },
-    rotation,
-  };
+async function pool(
+  total: number,
+  size: number,
+  task: (index: number) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(size, total)) },
+    async () => {
+      for (let i = next++; i < total; i = next++) {
+        await task(i);
+      }
+    },
+  );
+  await Promise.all(workers);
 }
 
 /**
@@ -1314,7 +1323,15 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
   }
 
   try {
-    const first = await deps.read(image, now);
+    // BIRINCHI so'rovda ikkita rasm ketadi: butun kadr va uning pastki
+    // qismi (MRZ odatda shu yerda). Shu tufayli ochiq pasport ham
+    // birinchi urinishda o'qiladi — qayta so'rov kerak bo'lmaydi,
+    // ya'ni ham tezroq, ham arzonroq
+    const strip = bottomStrip(image, 0.5);
+    const first = await deps.read(
+      strip ? [image, { bytes: strip, mime: "image/jpeg" }] : image,
+      now,
+    );
     // O'qilmagan bo'lsa — rasmni hujjatga kesib, YAQINDAN qayta o'qiymiz
     const { result, zoomed, box, quad } = await closerLook(first, image, deps, now);
 

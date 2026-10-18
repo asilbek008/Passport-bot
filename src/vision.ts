@@ -23,6 +23,7 @@ import {
   normalizeMime,
   type ReadHint,
 } from "./read-shared.ts";
+import type { Image } from "./read.ts";
 import type { ReadResult } from "./read-shared.ts";
 
 // Eski import yo'llari buzilmasligi uchun qayta eksport qilinadi
@@ -39,10 +40,11 @@ function getClient(): Anthropic {
 }
 
 export async function readDocument(
-  image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
+  image: Image | Image[],
   today = new Date(),
   hint?: ReadHint,
 ): Promise<ReadResult> {
+  const images = Array.isArray(image) ? image : [image];
   let response: Anthropic.Message;
   try {
     response = await getClient().messages.create({
@@ -53,15 +55,16 @@ export async function readDocument(
         {
           role: "user",
           content: [
-            {
-              type: "image",
+            // Rasmlar: asosiysi, keyin (bo'lsa) MRZ zonasining yaqin surati
+            ...images.map((img) => ({
+              type: "image" as const,
               source: {
-                type: "base64",
-                media_type: normalizeMime(image.mime),
-                data: Buffer.from(image.bytes).toString("base64"),
+                type: "base64" as const,
+                media_type: normalizeMime(img.mime),
+                data: Buffer.from(img.bytes).toString("base64"),
               },
-            },
-            { type: "text", text: promptFor(hint) },
+            })),
+            { type: "text" as const, text: promptFor(hint, images.length) },
           ],
         },
       ],

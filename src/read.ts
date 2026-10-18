@@ -15,11 +15,19 @@
 import { config } from "./config.ts";
 import type { ReadResult, ReadHint } from "./read-shared.ts";
 
+/** Modelga yuboriladigan rasm. */
+export type Image = { bytes: Uint8Array<ArrayBuffer>; mime: string };
+
 export type { ReadResult, ReadHint } from "./read-shared.ts";
 
 /** Rasmdan hujjat ma'lumotini o'qiydi. Provayder sozlamadan olinadi. */
 export async function readDocument(
-  image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
+  /**
+   * Bitta rasm yoki IKKITA: asosiy rasm va uning pastki qismi (MRZ
+   * zonasi). Ikkinchisi bo'lsa, model mayda qatorlarni ham ko'radi va
+   * birinchi so'rovdayoq o'qiydi — qayta urinish kerak bo'lmaydi.
+   */
+  image: Image | Image[],
   today = new Date(),
   /**
    * Rasm qanday ko'rinishda: `mrz_strip` — faqat MRZ zonasining yaqin

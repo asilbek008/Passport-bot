@@ -25,6 +25,7 @@ import {
   type ReadResult,
   type ReadHint,
 } from "./read-shared.ts";
+import type { Image } from "./read.ts";
 
 /**
  * Klient kerak bo'lganda yaratiladi — modul yuklanganda kalit talab
@@ -36,10 +37,11 @@ function getClient(): GoogleGenAI {
 }
 
 export async function readWithGemini(
-  image: { bytes: Uint8Array<ArrayBuffer>; mime: string },
+  image: Image | Image[],
   today = new Date(),
   hint?: ReadHint,
 ): Promise<ReadResult> {
+  const images = Array.isArray(image) ? image : [image];
   let text: string;
   try {
     const response = await getClient().models.generateContent({
@@ -48,13 +50,14 @@ export async function readWithGemini(
         {
           role: "user",
           parts: [
-            {
+            // Rasmlar: asosiysi, keyin (bo'lsa) MRZ zonasining yaqin surati
+            ...images.map((img) => ({
               inlineData: {
-                mimeType: normalizeMime(image.mime),
-                data: Buffer.from(image.bytes).toString("base64"),
+                mimeType: normalizeMime(img.mime),
+                data: Buffer.from(img.bytes).toString("base64"),
               },
-            },
-            { text: promptFor(hint) },
+            })),
+            { text: promptFor(hint, images.length) },
           ],
         },
       ],
