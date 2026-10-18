@@ -16,6 +16,7 @@ import {
   expand,
   toPixels,
   cropToDocument,
+  findDocument,
   parseQuad,
   quadPlausible,
   homography,
@@ -1027,4 +1028,183 @@ test("qiyshaytirilgan naqsh to'g'rilangach asliga qaytadi", () => {
     close / checked > 0.9,
     `naqsh asliga qaytmadi: ${close} / ${checked} nuqta mos keldi`,
   );
+});
+
+// ───────── Hujjatni O'ZIMIZ topish (model chegarani aytmaganda) ─────────
+//
+// Model "o'qiy olmadim" deganda chegarani ham tez-tez bermaydi — ya'ni
+// yaqinlashtirish aynan eng kerakli holatda (hujjat kadrda kichik)
+// ishlamasdi. Fon rangiga qarab hujjatni o'zimiz topamiz.
+
+/**
+ * Haqiqiyroq kadr: hujjatda surat, yozuv va MRZ tasmasi bor.
+ *
+ * Naqsh MUHIM: hujjatning ichi bir xil rangda emas. Avval markazdan
+ * "o'stirish" usuli sinab ko'rilgan edi va u MRZ tasmasining o'zida
+ * to'xtab qolardi — qora qatorlar qog'oz rangiga o'xshamaydi. Shuning
+ * uchun bu testlarda hujjat ataylab naqshli.
+ */
+function documentScene(
+  width: number,
+  height: number,
+  doc: Box,
+  options: { finger?: boolean; gradient?: boolean; paper?: [number, number, number] } = {},
+) {
+  const paper = options.paper ?? [235, 232, 222];
+  const data = new Uint8Array(width * height * 4);
+  const dx0 = (doc.x0 / 1000) * width;
+  const dx1 = (doc.x1 / 1000) * width;
+  const dy0 = (doc.y0 / 1000) * height;
+  const dy1 = (doc.y1 / 1000) * height;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      let color: [number, number, number];
+      if (x >= dx0 && x < dx1 && y >= dy0 && y < dy1) {
+        const ry = (y - dy0) / (dy1 - dy0);
+        const rx = (x - dx0) / (dx1 - dx0);
+        color = paper;
+        if (ry > 0.82 && (x >> 1) % 3 === 0) color = [40, 40, 40]; // MRZ
+        else if (rx < 0.3 && ry > 0.2 && ry < 0.7) color = [180, 165, 150]; // surat
+        else if (ry > 0.25 && ry < 0.75 && (y >> 2) % 3 === 0 && rx > 0.35) {
+          color = [90, 90, 95]; // yozuv
+        }
+      } else {
+        const light = options.gradient ? Math.round(40 * (x / width)) : 0;
+        color = [72 + light, 74 + light, 78 + light]; // stol
+        if (
+          options.finger &&
+          x > width * 0.18 &&
+          x < width * 0.3 &&
+          y > height * 0.55 &&
+          y < height * 0.75
+        ) {
+          color = [190, 140, 110]; // barmoq
+        }
+      }
+      data[i] = color[0];
+      data[i + 1] = color[1];
+      data[i + 2] = color[2];
+      data[i + 3] = 255;
+    }
+  }
+  return {
+    bytes: new Uint8Array(encode({ data, width, height }, 88).data) as Uint8Array<ArrayBuffer>,
+    mime: "image/jpeg",
+  };
+}
+
+/** Topilgan chegara haqiqiysidan qancha uzoq (0–1000 shkalasida). */
+function boxError(found: Box, want: Box): number {
+  return Math.max(
+    Math.abs(found.x0 - want.x0),
+    Math.abs(found.x1 - want.x1),
+    Math.abs(found.y0 - want.y0),
+    Math.abs(found.y1 - want.y1),
+  );
+}
+
+test("hujjat kadrda kichik bo'lsa ham topiladi", () => {
+  const want: Box = { x0: 380, y0: 400, x1: 620, y1: 600 };
+  const found = findDocument(documentScene(1280, 960, want));
+  assert.ok(found, "topilishi kerak");
+  assert.ok(boxError(found, want) < 40, `xato katta: ${JSON.stringify(found)}`);
+});
+
+test("MRZ tasmasi chegara ichida qoladi", () => {
+  // ENG MUHIM: MRZ hujjatning eng pastida. Agar pastki chet MRZ'dan
+  // yuqorida topilsa, qirqilgan rasmda MRZ bo'lmaydi va bot uni hech
+  // qachon o'qiy olmaydi. Markazdan "o'stirish" usuli aynan shunday
+  // xato qilardi (y1 671 o'rniga 608 chiqardi)
+  const want: Box = { x0: 300, y0: 330, x1: 700, y1: 670 };
+  const found = findDocument(documentScene(1280, 960, want));
+  assert.ok(found, "topilishi kerak");
+  assert.ok(
+    found.y1 >= want.y1 - 15,
+    `pastki chet MRZ'ni kesib qo'ydi: ${found.y1} < ${want.y1}`,
+  );
+});
+
+test("barmoq va notekis yorug'lik xalaqit bermaydi", () => {
+  const want: Box = { x0: 300, y0: 330, x1: 700, y1: 670 };
+  const found = findDocument(
+    documentScene(1280, 960, want, { finger: true, gradient: true }),
+  );
+  assert.ok(found, "topilishi kerak");
+  assert.ok(boxError(found, want) < 60, `xato katta: ${JSON.stringify(found)}`);
+});
+
+test("qizil pasport to'q kulrang stolda topiladi", () => {
+  // Kulrangga aylantirilsa qizil pasport (150,30,35) stoldan (70,72,75)
+  // deyarli farq qilmaydi — shuning uchun RANG bo'yicha solishtiriladi
+  const want: Box = { x0: 300, y0: 330, x1: 700, y1: 670 };
+  const found = findDocument(
+    documentScene(1280, 960, want, { paper: [150, 30, 35] }),
+  );
+  assert.ok(found, "topilishi kerak");
+  assert.ok(boxError(found, want) < 40, `xato katta: ${JSON.stringify(found)}`);
+});
+
+test("hujjat yo'q bo'lsa — null (bo'sh joy qirqilmaydi)", () => {
+  const width = 900;
+  const height = 700;
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 88;
+    data[i + 1] = 90;
+    data[i + 2] = 94;
+    data[i + 3] = 255;
+  }
+  const bytes = new Uint8Array(encode({ data, width, height }, 92).data);
+  assert.equal(
+    findDocument({ bytes: bytes as Uint8Array<ArrayBuffer>, mime: "image/jpeg" }),
+    null,
+  );
+});
+
+test("hujjat kadrni to'ldirgan bo'lsa — null (qirqishdan foyda yo'q)", () => {
+  const found = findDocument(
+    documentScene(1280, 960, { x0: 5, y0: 5, x1: 995, y1: 995 }),
+  );
+  assert.equal(found, null);
+});
+
+test("hujjatga o'xshamagan shakl — null", () => {
+  // Juda keng va past: bu hujjat emas (MRZ tasmasi yoki soya chizig'i)
+  const found = findDocument(
+    documentScene(1280, 960, { x0: 100, y0: 470, x1: 980, y1: 530 }),
+  );
+  assert.equal(found, null);
+});
+
+test("JPEG bo'lmagan rasm va buzuq bayt — null", () => {
+  const junk = new Uint8Array([1, 2, 3, 4, 5]) as Uint8Array<ArrayBuffer>;
+  assert.equal(findDocument({ bytes: junk, mime: "image/png" }), null);
+  assert.equal(findDocument({ bytes: junk, mime: "image/jpeg" }), null);
+});
+
+test("topilgan chegara bilan qirqilgan rasmda MRZ joyi saqlanadi", () => {
+  // Yo'lning oxirigacha: topish → qirqish → natijada MRZ bormi.
+  // Qirqilgan rasmning pastki qismida qora qatorlar bo'lishi kerak
+  const want: Box = { x0: 330, y0: 350, x1: 670, y1: 650 };
+  const image = documentScene(1280, 960, want);
+  const found = findDocument(image);
+  assert.ok(found);
+
+  const cut = cropToDocument(image, { box: found, marginPct: 6 });
+  assert.equal(cut.cropped, true, "qirqilishi kerak");
+
+  const out = decode(cut.bytes, { useTArray: true, formatAsRGBA: true });
+  assert.ok(out.width < 1280 * 0.45, `yaqinlashmadi: ${out.width}`);
+
+  // Pastki 25% da qora piksellar (MRZ) bormi
+  let dark = 0;
+  for (let y = Math.floor(out.height * 0.75); y < out.height; y++) {
+    for (let x = 0; x < out.width; x++) {
+      const i = (y * out.width + x) * 4;
+      if (out.data[i] < 90 && out.data[i + 1] < 90) dark++;
+    }
+  }
+  assert.ok(dark > out.width * 2, `qirqilgan rasmda MRZ qolmadi: ${dark} piksel`);
 });

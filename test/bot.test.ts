@@ -1708,6 +1708,21 @@ async function smallDocumentJpeg() {
   return new Uint8Array(encode({ data, width, height }, 92).data);
 }
 
+/** Hujjatsiz kadr: bir xil fon — o'zimiz ham hech narsa topa olmaymiz. */
+async function blankJpeg() {
+  const { encode } = await import("jpeg-js");
+  const width = 900;
+  const height = 700;
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 88;
+    data[i + 1] = 90;
+    data[i + 2] = 94;
+    data[i + 3] = 255;
+  }
+  return new Uint8Array(encode({ data, width, height }, 92).data);
+}
+
 test("o'qilmagan rasm hujjatga kesilib, yaqindan qayta o'qiladi", async () => {
   const mrz = td3({
     surname: "YAQINOV", given: "SARDOR", docNumber: "AB7070707",
@@ -1775,6 +1790,7 @@ test("birinchi so'rovda BITTA rasm — butun kadr", async () => {
   // yarim ko'r taxmin — ko'p rasmda u yerda MRZ emas, stol bo'ladi va
   // model unga ishonib "o'qiy olmadim" deydi. Yaqin surat faqat model
   // hujjat qayerdaligini aytgandan keyin, ANIQ joydan olinadi
+  const { decode } = await import("jpeg-js");
   const source = await smallDocumentJpeg();
   const { deps, store, calls, images } = makeDeps(
     { f1: [{ ok: false, reason: "unreadable", problem: "xira" }] },
@@ -1784,9 +1800,59 @@ test("birinchi so'rovda BITTA rasm — butun kadr", async () => {
   await processBatch(OPERATOR, ["f1"], deps as never);
 
   assert.equal(images[0].length, 1, "birinchi so'rovda faqat bitta rasm");
-  // Chegara aytilmagan — qayerni kesishni bilmaymiz, qayta urinish yo'q
-  assert.equal(calls.f1, 1);
+  const first = decode(images[0][0].bytes as Uint8Array<ArrayBuffer>, {
+    useTArray: true,
+  });
+  assert.equal(first.width, 1200, "butun kadr — qirqilmagan");
+
+  // Model chegarani aytmagan, lekin hujjatni o'zimiz topamiz —
+  // shuning uchun qayta urinish baribir bo'ladi
+  assert.ok(calls.f1 > 1, "qayta urinish bo'lishi kerak");
+  for (let n = 1; n < images.length; n++) {
+    assert.equal(images[n].length, 1, `${n + 1}-so'rovda ham bitta rasm`);
+    const later = decode(images[n][0].bytes as Uint8Array<ArrayBuffer>, {
+      useTArray: true,
+    });
+    assert.ok(later.width < first.width, "keyingi so'rovlar yaqinroq");
+  }
   assert.equal(store.count(), 0);
+  store.close();
+});
+
+test("model chegarani aytmasa, hujjatni O'ZIMIZ topib qirqamiz", async () => {
+  // ENG KERAKLI HOLAT: hujjat kadrda kichik (MRZ mayda) — lekin model
+  // "o'qiy olmadim" deganda chegarani ham bermaydi. Avval shu yerda
+  // to'xtardik, ya'ni yaqinlashtirish aynan kerak bo'lganda ishlamasdi
+  const mrz = td3({
+    surname: "TOPILOV", given: "RUSTAM", docNumber: "AB8181818",
+    birth: "880101", sex: "M", expiry: "330101",
+  });
+  const { decode } = await import("jpeg-js");
+  const source = await smallDocumentJpeg();
+  const { deps, store, calls, images, edits } = makeDeps(
+    {
+      f1: [
+        // Chegara YO'Q: faqat "o'qiy olmadim"
+        { ok: false, reason: "unreadable", problem: "xira" },
+        okResult(mrz),
+      ],
+    },
+    source,
+  );
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(calls.f1, 2, "ikkinchi so'rov — o'zimiz topgan hujjat");
+  const cut = decode(images[1][0].bytes as Uint8Array<ArrayBuffer>, {
+    useTArray: true,
+  });
+  // Hujjat kadrning 35–65% i (x) va 40–62% i (y) — qirqilgani shundan bilinadi
+  assert.ok(
+    cut.width < 1200 * 0.45 && cut.width > 1200 * 0.25,
+    `hujjatga kesilsin, kengligi ${cut.width}`,
+  );
+  assert.equal(store.count(), 1, "yaqindan o'qildi");
+  assert.match(edits.map((e) => e.text).join("\n"), /yaqindan qayta o'qildi/);
   store.close();
 });
 
@@ -1798,7 +1864,7 @@ test("hujjat qayerdaligi aytilmasa — butun kadr kuchliroq modelga beriladi", a
     surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
     birth: "850412", sex: "M", expiry: "300101",
   });
-  const source = await smallDocumentJpeg();
+  const source = await blankJpeg();
   const { deps, store, calls, images, models } = makeDeps(
     {
       f1: [
@@ -1830,7 +1896,7 @@ test("hujjat qayerdaligi aytilmasa — butun kadr kuchliroq modelga beriladi", a
 });
 
 test("kuchliroq model o'chirilgan bo'lsa, bekorga so'rov ketmaydi", async () => {
-  const source = await smallDocumentJpeg();
+  const source = await blankJpeg();
   const { deps, store, calls } = makeDeps(
     { f1: [{ ok: false, reason: "unreadable", problem: "xira" }] },
     source,
@@ -1988,7 +2054,12 @@ test("ID karta o'qilmagan bo'lsa, MRZ'siz rasm xato bo'lib qoladi", async () => 
   const report = edits.map((e) => e.text).join("\n");
   assert.match(report, /O'qilmadi \(1\)/);
   assert.match(report, /ORQA tomonini oling/);
-  assert.match(report, /Tashxis: 1-rasm — turi: id_card\/front, MRZ qatori: 0/);
+  // Tashxisda: model nimani ko'rgani, nima urinilgani va modelning izohi.
+  // Bu yerda chegara aytilmagan, shuning uchun qayta urinish ham yo'q
+  assert.match(report, /Tashxis/);
+  assert.match(report, /turi: id_card\/front, MRZ qatori: 0/);
+  assert.match(report, /urinish: kadr → hujjat topilmadi/);
+  assert.match(report, /model: "MRZ ko'rinmadi"/);
   assert.equal(store.count(), 0);
   store.close();
 });

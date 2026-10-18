@@ -361,9 +361,16 @@ export function interpret(text: string, today: Date): ReadResult {
     // bo'lishining belgisi.
     // Tashxis uchun: model hujjatni qanday belgiladi va nechta qator
     // berdi. Bu yerda hujjat MA'LUMOTI yo'q — faqat turi va soni
+    //
+    // Chegara bor-yo'qligi ham yoziladi: qayta urinish undan boshlanadi,
+    // ya'ni "chegara yo'q" degan yozuv nega yaqindan qaralmaganini
+    // tushuntiradi.
+    const box = parseBox(out.document_box);
+    const quad = parseQuad(out.document_quad);
     const diag = `turi: ${out.document_kind}` +
       (out.id_side ? `/${out.id_side}` : "") +
-      `, MRZ qatori: ${out.mrz_lines.length}`;
+      `, MRZ qatori: ${out.mrz_lines.length}` +
+      `, chegara: ${quad ? "burchaklar" : box ? "bor" : "yo'q"}`;
 
     const front =
       out.document_kind === "id_card" &&
@@ -371,8 +378,8 @@ export function interpret(text: string, today: Date): ReadResult {
         (out.id_side == null && out.mrz_lines.length === 0));
     return {
       ok: false,
-      box: parseBox(out.document_box),
-      quad: parseQuad(out.document_quad),
+      box,
+      quad,
       reason: front
         ? "id_front"
         : out.document_kind === "id_card"

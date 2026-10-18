@@ -554,11 +554,15 @@ export const t = {
         `*O'qilmadi (${parts.failed.length}) — qaytadan suratga oling:*`,
         ...parts.failed,
       );
-      // Tashxis: nima bo'lganini aniq bilish uchun. Ism, raqam va matn
-      // chiqmaydi — faqat hujjat turi va qatorlar soni
+      // Tashxis: nima bo'lganini aniq bilish uchun — har rasm alohida
+      // qatorda. Ism va hujjat raqami chiqmaydi: faqat hujjat turi,
+      // qatorlar soni, chegara va qanday urinishlar bo'lgani.
+      //
+      // Har qator alohida: avval hammasi bitta uzun qatorga qo'shilardi
+      // va 8 rasmlik to'plamda o'qib bo'lmaydigan matn chiqardi.
       const diagnostics = parts.diagnostics ?? [];
       if (diagnostics.length > 0) {
-        out.push("", `_Tashxis: ${diagnostics.join("; ")}._`);
+        out.push("", "_Tashxis (sifatni yaxshilash uchun):_", ...diagnostics);
       }
     }
 

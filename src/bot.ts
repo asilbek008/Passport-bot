@@ -24,6 +24,7 @@ import { makeZip, type ZipEntry } from "./zip.ts";
 import {
   cropToDocument,
   bottomStrip,
+  findDocument,
   type Box,
   type Quad,
   type Rotation,
@@ -1121,7 +1122,7 @@ export async function processBatch(
   // va qatorlar soni, shuning uchun ko'rsatish xavfsiz
   const diagnostics = fails
     .filter((f) => failed.length > 0 && f.diag)
-    .map((f) => `${f.index}-rasm — ${f.diag}`);
+    .map((f) => `\`${f.index}\` ${f.diag}`);
 
   const report = t.batchReport({
     ok,
@@ -1231,6 +1232,8 @@ async function closerLook(
   zoomed: boolean;
   box: Box | null;
   quad: Quad | null;
+  /** Qanday urinishlar bo'lgani — hisobotdagi tashxis uchun */
+  trail: string[];
 }> {
   // Chegara nafaqat o'qilgan natijada, nosozlikda ham bo'lishi mumkin
   const boxOf = (r: ReadResult): Box | null =>
@@ -1238,11 +1241,22 @@ async function closerLook(
   const quadOf = (r: ReadResult): Quad | null =>
     r.ok ? r.quad : "quad" in r ? (r.quad ?? null) : null;
 
+  /**
+   * Urinishlar izi.
+   *
+   * KERAK: "o'qilmadi" degan javob nima bo'lganini aytmaydi — bitta
+   * so'rovda to'xtadimi, kesib ko'rildimi, kuchliroq model qaradimi.
+   * Shu bo'lmasa sifatni yaxshilash taxminga aylanadi. Ichida hujjat
+   * ma'lumoti yo'q — faqat qadamlarning nomi.
+   */
+  const trail: string[] = ["kadr"];
+
   const keep = {
     result: first,
     zoomed: false,
     box: boxOf(first),
     quad: quadOf(first),
+    trail,
   };
   if (first.ok) return keep;
 
@@ -1252,7 +1266,10 @@ async function closerLook(
     first.reason === "unreadable" ||
     first.reason === "id_back_unclear" ||
     first.reason === "mrz_shape";
-  if (!worthRetry) return keep;
+  if (!worthRetry) {
+    trail.push("qayta urinilmadi");
+    return keep;
+  }
 
   const box = keep.box;
   const quad = keep.quad;
@@ -1261,27 +1278,53 @@ async function closerLook(
   //
   // Model hujjat qayerdaligini aytdi — o'sha joyni kesib, yaqindan
   // ko'rsatamiz. Endi hujjat butun kadrni egallaydi.
-  const closer =
+  let closer =
     box || quad ? cropToDocument(image, { box, quad, marginPct: 6 }) : null;
 
-  // Hujjat qayerdaligi aytilmagan (yoki kesish ishonchsiz) — qayerni
-  // kesishni bilmaymiz. Shunda butun kadrni KUCHLIROQ modelga beramiz:
-  // yaqinlashtirish yo'q, lekin mayda qatorlarni u ko'proq o'qiydi.
-  // Avval bu yerda bitta so'rovdan keyin to'xtardik va xodim
-  // "MRZ topilmadi" degan javob olardi, holbuki hujjat ko'rinib turardi
+  // Model chegarani aytmagan (yoki u ishonchsiz) bo'lsa — O'ZIMIZ
+  // topamiz: fon (stol) rangidan farq qiladigan eng katta bo'lak.
+  //
+  // Bu eng kerakli holat edi va eng yomon ishlayotgan joy: model
+  // "o'qiy olmadim" deganda chegarani ham tez-tez bermaydi, ya'ni
+  // hujjat kadrda kichik bo'lgan rasmda yaqinlashtirish umuman
+  // bo'lmasdi — bitta so'rovdan keyin to'xtardik
+  let own = false;
   if (!closer?.cropped) {
+    const guess = findDocument(image);
+    if (guess) {
+      const mine = cropToDocument(image, { box: guess, marginPct: 6 });
+      if (mine.cropped) {
+        closer = mine;
+        own = true;
+      }
+    }
+  }
+
+  // Ikkisi ham bo'lmasa — qayerni kesishni bilmaymiz. Shunda butun
+  // kadrni KUCHLIROQ modelga beramiz: yaqinlashtirish yo'q, lekin
+  // mayda qatorlarni u ko'proq o'qiydi
+  if (!closer?.cropped) {
+    trail.push(box || quad ? "kesib bo'lmadi" : "hujjat topilmadi");
     if (!config.fallbackModel) return keep;
+    trail.push("kadr+kuchli");
     await deps.throttle?.wait();
     const stronger = await deps.read(image, now, { model: config.fallbackModel });
     return stronger.ok
-      ? { result: stronger, zoomed: false, box: boxOf(stronger), quad: quadOf(stronger) }
+      ? {
+          result: stronger,
+          zoomed: false,
+          box: boxOf(stronger),
+          quad: quadOf(stronger),
+          trail,
+        }
       : keep;
   }
 
   const closerImage = { bytes: closer.bytes, mime: "image/jpeg" };
+  trail.push(own ? "hujjat (o'zim topdim)" : "hujjat");
   await deps.throttle?.wait();
   const second = await deps.read(closerImage, now);
-  if (second.ok) return { result: second, zoomed: true, box, quad };
+  if (second.ok) return { result: second, zoomed: true, box, quad, trail };
 
   // ── 3-urinish: HUJJATNING MRZ ZONASI, kuchliroq model bilan.
   //
@@ -1297,6 +1340,9 @@ async function closerLook(
   const strip = bottomStrip(closerImage, 0.45);
   if (!strip && !config.fallbackModel) return keep;
 
+  trail.push(
+    (strip ? "tasma" : "hujjat") + (config.fallbackModel ? "+kuchli" : ""),
+  );
   await deps.throttle?.wait();
   const third = await deps.read(
     strip ? { bytes: strip, mime: "image/jpeg" } : closerImage,
@@ -1306,7 +1352,7 @@ async function closerLook(
       model: config.fallbackModel || undefined,
     },
   );
-  return third.ok ? { result: third, zoomed: true, box, quad } : keep;
+  return third.ok ? { result: third, zoomed: true, box, quad, trail } : keep;
 }
 
 /**
@@ -1364,6 +1410,12 @@ async function downloadPhoto(
   return null;
 }
 
+/** Uzun matnni qisqartiradi (tashxis qatori bitta qatorga sig'ishi kerak). */
+function short(text: string, max: number): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
+}
+
 async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> {
   const image = await downloadPhoto(fileId, deps);
   if (!image) return { kind: "failed", why: "faylni yuklab bo'lmadi" };
@@ -1379,7 +1431,29 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
     // aytgandan keyin, aniq joydan olinadi (pastda).
     const first = await deps.read(image, now);
     // O'qilmagan bo'lsa — rasmni hujjatga kesib, YAQINDAN qayta o'qiymiz
-    const { result, zoomed, box, quad } = await closerLook(first, image, deps, now);
+    const { result, zoomed, box, quad, trail } = await closerLook(
+      first,
+      image,
+      deps,
+      now,
+    );
+
+    /**
+     * Nosozlik tashxisi: model nimani ko'rgani, nima urinilgani va
+     * modelning o'z izohi. Ichida hujjat ma'lumoti yo'q.
+     *
+     * Bu hisobotga chiqadi, chunki "o'qilmadi" degan javob sifatni
+     * yaxshilashga yetarli emas: bitta so'rovda to'xtadimi, kesildimi,
+     * kuchliroq model qaradimi — bilmasak, taxmin qilib tuzatamiz.
+     */
+    const diagOf = (r: ReadResult & { ok: false }): string => {
+      const parts = [
+        "diag" in r && r.diag ? r.diag : null,
+        `urinish: ${trail.join(" → ")}`,
+        "problem" in r && r.problem ? `model: "${short(r.problem, 70)}"` : null,
+      ];
+      return parts.filter(Boolean).join(" · ");
+    };
 
     if (result.ok) {
       return {
@@ -1405,9 +1479,13 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
 
     switch (result.reason) {
       case "checks_failed":
-        return { kind: "failed", why: t.reasonChecks(failedFields(result.mrz)) };
+        return {
+          kind: "failed",
+          why: t.reasonChecks(failedFields(result.mrz)),
+          diag: `urinish: ${trail.join(" → ")}`,
+        };
       case "not_a_document":
-        return { kind: "failed", why: t.reasonNotDocument };
+        return { kind: "failed", why: t.reasonNotDocument, diag: diagOf(result) };
       // ID kartaning old tomoni — MRZ orqa tomonda. Yechimi rasmni
       // yaxshilash emas, boshqa tomonini olish
       case "id_front":
@@ -1415,16 +1493,16 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
           kind: "failed",
           why: t.reasonIdBack,
           code: "no_mrz",
-          diag: result.diag,
+          diag: diagOf(result),
         };
       case "id_back_unclear":
-        return { kind: "failed", why: t.reasonIdUnclear, diag: result.diag };
+        return { kind: "failed", why: t.reasonIdUnclear, diag: diagOf(result) };
       // MRZ ko'rindi, lekin qatorlar shakli to'g'ri kelmadi.
       // Sabab O'ZIMIZNING kodimizdan (qatorlar soni va uzunligi),
       // ichida hujjat ma'lumoti yo'q — xodimga aytamiz, chunki
       // "xira yoki kesilgan" bu yerda noto'g'ri maslahat bo'lardi
       case "mrz_shape":
-        return { kind: "failed", why: result.problem };
+        return { kind: "failed", why: result.problem, diag: diagOf(result) };
       case "refused":
         return { kind: "failed", why: t.reasonRefused };
       case "api_error":
@@ -1442,7 +1520,7 @@ async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> 
           // old tomoni. Shu to'plamda uning orqa tomoni o'qilgan bo'lsa,
           // xato emas, izoh bo'lib chiqadi
           code: result.noMrz ? "no_mrz" : undefined,
-          diag: result.diag,
+          diag: diagOf(result),
         };
     }
   } catch (err) {

@@ -929,6 +929,189 @@ export function bottomStrip(
   return cut.cropped ? cut.bytes : null;
 }
 
+/**
+ * Kadrning FONI (stol) rangi — to'rt burchakdan.
+ *
+ * Hujjat deyarli har doim kadrning o'rtasida bo'ladi, burchaklarda esa
+ * stol yoki devor turadi. Shuning uchun fon rangini burchaklardan
+ * olamiz. `spread` — burchaklarning o'zaro farqi: yorug'lik bir tomondan
+ * tushsa fon notekis bo'ladi va "hujjat" deb hisoblash chegarasi
+ * oshirilishi kerak.
+ */
+function backgroundColor(small: Small): {
+  level: [number, number, number];
+  spread: number;
+} {
+  const patch = Math.max(2, Math.round(Math.min(small.w, small.h) * 0.06));
+  const corners: [number, number][] = [
+    [0, 0],
+    [small.w - patch, 0],
+    [0, small.h - patch],
+    [small.w - patch, small.h - patch],
+  ];
+  const means = corners.map(([cx, cy]) => {
+    const px: [number, number, number][] = [];
+    for (let y = cy; y < cy + patch; y++) {
+      for (let x = cx; x < cx + patch; x++) px.push(pixelAt(small, x, y));
+    }
+    return [
+      mean(px.map((c) => c[0])),
+      mean(px.map((c) => c[1])),
+      mean(px.map((c) => c[2])),
+    ] as [number, number, number];
+  });
+  const level: [number, number, number] = [
+    median(means.map((c) => c[0])),
+    median(means.map((c) => c[1])),
+    median(means.map((c) => c[2])),
+  ];
+  return { level, spread: mean(means.map((c) => colorDiff(c, level))) };
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Hujjatni O'ZIMIZ topish — model chegarani aytmaganda.
+ *
+ * NEGA KERAK: yaqindan qayta o'qish butunlay modelning `document_box`
+ * iga bog'liq edi. Model "o'qiy olmadim" deganda chegarani ham tez-tez
+ * bermaydi — ya'ni ENG KERAKLI holatda (hujjat kadrda kichik, MRZ mayda)
+ * yaqinlashtirish umuman ishlamasdi.
+ *
+ * QANDAY ISHLAYDI: fon (stol) rangi burchaklardan olinadi, keyin
+ * fondan FARQ QILADIGAN piksellarning eng katta bir-biriga tutashgan
+ * bo'lagi topiladi (hujjat kadrdagi eng katta "begona" narsa) va shu
+ * bo'lakning chegarasi qaytariladi.
+ *
+ * NEGA MARKAZDAN "O'STIRISH" EMAS: avval `refineBox` bilan kadr
+ * markazidan boshlab hujjat tomonga surib ko'rildi. Tekis rangli
+ * hujjatda ishladi, YOZUVLI hujjatda esa MRZ tasmasining o'zida
+ * to'xtab qoldi — qora qatorlar qog'oz rangiga o'xshamaydi va "hujjat
+ * tugadi" deb hisoblandi. Ya'ni aynan MRZ kesilib ketardi. Fon bo'yicha
+ * ajratishda yozuv ham, surat ham, MRZ ham baribir "fon emas" — hammasi
+ * hujjatning ichida qoladi.
+ *
+ * TEKSHIRUVLAR: topilgan narsa hujjat shaklida bo'lishi (`plausible`),
+ * kadrni to'ldirib yubormasligi (unda qirqishdan foyda yo'q) va to'rt
+ * tomonning kamida uchtasida chegara ko'rinishi kerak.
+ *
+ * Bu faqat O'QISH uchun: arxivga tushadigan rasm hech qachon shu
+ * usulda qirqilmaydi — u yerda modelning chegarasi ishlatiladi.
+ */
+export function findDocument(image: {
+  bytes: Uint8Array<ArrayBuffer>;
+  mime: string;
+}): Box | null {
+  if (image.mime !== "image/jpeg") return null;
+  try {
+    const raw = decode(image.bytes, {
+      useTArray: true,
+      formatAsRGBA: true,
+      tolerantDecoding: true,
+      maxMemoryUsageInMB: 512,
+    });
+    const small = toSmallColor(raw.data, raw.width, raw.height);
+    const { level, spread } = backgroundColor(small);
+
+    // Fondan shuncha farq qilsa — "fon emas". Notekis yorug'likda
+    // chegara oshadi, aks holda stolning o'zi hujjat bo'lib ko'rinadi
+    const limit = clamp(spread * 2 + 18, 20, 70);
+    const total = small.w * small.h;
+    const foreign = new Uint8Array(total);
+    for (let y = 0; y < small.h; y++) {
+      for (let x = 0; x < small.w; x++) {
+        const i = y * small.w + x;
+        foreign[i] = colorDiff(pixelAt(small, x, y), level) > limit ? 1 : 0;
+      }
+    }
+
+    const found = largestBlob(foreign, small.w, small.h);
+    if (!found) return null;
+    // Juda kichik — hujjat emas, dog' yoki soya; juda katta — kadrni
+    // to'ldirgan, qirqishning foydasi yo'q. Pastdagi chegara ataylab
+    // past: hujjat kadrning 1 foizi bo'lgan holat ENG kerakli holat,
+    // shakl bo'yicha qarorni `plausible` beradi (u 1.2 foizdan boshlaydi)
+    if (found.area < total * 0.01 || found.area > total * 0.9) return null;
+
+    const box: Box = {
+      x0: (found.x0 / small.w) * 1000,
+      y0: (found.y0 / small.h) * 1000,
+      x1: ((found.x1 + 1) / small.w) * 1000,
+      y1: ((found.y1 + 1) / small.h) * 1000,
+    };
+    if (!plausible(box)) return null;
+    if (edgeContrast(small, box) < 3) return null;
+    return box;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Eng katta bir-biriga tutashgan "fon emas" bo'lagi va uning chegarasi.
+ *
+ * Oddiy to'lg'azish (flood fill), stack bilan — rekursiyasiz, chunki
+ * 320×240 rasmda rekursiya chuqurligi stack'ni to'ldirib yuborishi
+ * mumkin.
+ */
+function largestBlob(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+): { x0: number; y0: number; x1: number; y1: number; area: number } | null {
+  const seen = new Uint8Array(w * h);
+  const stack: number[] = [];
+  let best: { x0: number; y0: number; x1: number; y1: number; area: number } | null =
+    null;
+
+  for (let start = 0; start < mask.length; start++) {
+    if (mask[start] === 0 || seen[start] === 1) continue;
+    seen[start] = 1;
+    stack.push(start);
+    let area = 0;
+    let x0 = w;
+    let y0 = h;
+    let x1 = 0;
+    let y1 = 0;
+
+    while (stack.length > 0) {
+      const at = stack.pop()!;
+      const x = at % w;
+      const y = (at - x) / w;
+      area++;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+
+      if (x > 0 && mask[at - 1] === 1 && seen[at - 1] === 0) {
+        seen[at - 1] = 1;
+        stack.push(at - 1);
+      }
+      if (x < w - 1 && mask[at + 1] === 1 && seen[at + 1] === 0) {
+        seen[at + 1] = 1;
+        stack.push(at + 1);
+      }
+      if (y > 0 && mask[at - w] === 1 && seen[at - w] === 0) {
+        seen[at - w] = 1;
+        stack.push(at - w);
+      }
+      if (y < h - 1 && mask[at + w] === 1 && seen[at + w] === 0) {
+        seen[at + w] = 1;
+        stack.push(at + w);
+      }
+    }
+
+    if (!best || area > best.area) best = { x0, y0, x1, y1, area };
+  }
+
+  return best;
+}
+
 export type CropOptions = {
   /**
    * Berilgan chegarani AYNAN kesadi: shakl tekshiruvlari, piksel

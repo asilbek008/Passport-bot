@@ -461,7 +461,7 @@ Shuning uchun o'qilmagan rasm bosqichma-bosqich yaqinlashtiriladi:
 | Urinish | Modelga nima ketadi | Model |
 |---|---|---|
 | 1 | butun kadr | `GEMINI_MODEL` |
-| 2 | **hujjatning o'zi** — model aytgan chegara bo'yicha kesilgan | `GEMINI_MODEL` |
+| 2 | **hujjatning o'zi** — kesilgan (chegarani model aytadi, aytmasa bot o'zi topadi) | `GEMINI_MODEL` |
 | 3 | **hujjatning MRZ zonasi** — kesilgan hujjatning pastki 45% i | `FALLBACK_MODEL` |
 
 Har qadamda MRZ bir necha barobar yiriklashadi. Hisobotda "N tasi
@@ -481,16 +481,58 @@ Geminida standart `gemini-2.5-pro`). Unga faqat muammoli rasmlar
 tushadi — shuning uchun narx deyarli oshmaydi, mayda MRZ qatorlarida
 esa farq katta. O'chirish: `FALLBACK_MODEL=off`.
 
-**Model hujjat qayerdaligini aytmagan bo'lsa** (yoki kesish ishonchsiz
-bo'lsa) qayerni kesishni bilmaymiz — shunda butun kadr bir marta
-kuchliroq modelga beriladi. Avval bu yerda bitta so'rovdan keyin
-to'xtardik va xodim «MRZ topilmadi» degan javob olardi, holbuki hujjat
-rasmda ko'rinib turardi.
+### Hujjatni bot O'ZI topadi
+
+Yaqinlashtirish butunlay modelning chegarasiga bog'liq edi. Muammo
+shunda: model «o'qiy olmadim» deganda chegarani ham tez-tez bermaydi —
+ya'ni yaqinlashtirish **aynan eng kerakli holatda** (hujjat kadrda
+kichik, MRZ mayda) ishlamasdi. Bitta so'rovdan keyin to'xtardik va
+xodim «MRZ topilmadi» degan javob olardi, holbuki hujjat rasmda
+ko'rinib turardi.
+
+Endi model chegarani aytmasa, bot hujjatni o'zi topadi: kadrning to'rt
+burchagidan **fon (stol) rangi** olinadi, keyin fondan farq qiladigan
+piksellarning eng katta tutashgan bo'lagi — hujjat — ajratiladi. Yozuv,
+surat va MRZ ham «fon emas», shuning uchun hammasi hujjat ichida
+qoladi.
+
+Sinovda bu usul hujjat chegarasini **1 foiz aniqlik** bilan topadi:
+kadrning oltidan biri bo'lgan hujjatda ham, barmoq va notekis
+yorug'likda ham, qizil pasport to'q kulrang stolda ham. Hujjat yo'q
+bo'lsa, kadrni to'ldirib yotgan bo'lsa yoki topilgan shakl hujjatga
+o'xshamasa — qirqilmaydi (eski qoida o'zgarmadi: **shubha bo'lsa
+qirqmaymiz**).
+
+Avval boshqa usul sinab ko'rilgan edi — kadr markazidan boshlab hujjat
+tomonga «o'stirish». Tekis rangli hujjatda ishladi, yozuvli hujjatda esa
+**MRZ tasmasining o'zida to'xtab qoldi**: qora qatorlar qog'oz rangiga
+o'xshamaydi va «hujjat tugadi» deb hisoblandi, ya'ni aynan MRZ kesilib
+ketardi. Shu holat alohida test bo'lib qoldi.
+
+Ikkisi ham bo'lmasa — butun kadr bir marta kuchliroq modelga beriladi.
 
 Qayta urinish faqat "ko'rinmadi" turidagi sabablarda bo'ladi. ID
 kartaning **old tomoni** yuborilgan bo'lsa yoki rasmda hujjat umuman
 bo'lmasa, qayta so'ralmaydi — yaqindan qarash yordam bermaydi, bekorga
 pul ketadi.
+
+### Hisobotdagi "Tashxis"
+
+O'qilmagan rasmlar ostida har biri uchun bitta qator chiqadi:
+
+```
+Tashxis (sifatni yaxshilash uchun):
+2  turi: passport, MRZ qatori: 0, chegara: yo'q · urinish: kadr → hujjat (o'zim topdim) → tasma+kuchli · model: "MRZ qatorlari mayda chiqdi"
+```
+
+Ya'ni: model hujjatni qanday belgilagani, nechta MRZ qatori ko'rgani,
+chegara bergan-bermagani, qanday urinishlar bo'lgani va modelning o'z
+izohi. Ism, hujjat raqami va MRZ matni **chiqmaydi**.
+
+Bu shunchaki qo'shimcha ma'lumot emas — sifatni yaxshilashning sharti.
+"O'qilmadi" degan javob nima bo'lganini aytmaydi: bitta so'rovda
+to'xtadimi, kesib ko'rildimi, kuchliroq model qaradimi. Shu bo'lmasa
+har tuzatish taxminga aylanadi.
 
 **To'ldiruvchi `<` lar.** Modellar MRZ dagi `<` larning sonini tez-tez
 adashadi — ID kartada ular uzun qator bo'lib ketgani uchun ayniqsa.
@@ -796,7 +838,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 345 test — bo'laklar alohida
+npm test         # 355 test — bo'laklar alohida
 npm run sinov    # 50 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
