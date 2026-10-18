@@ -640,12 +640,12 @@ async function withBot(mode, steps) {
     push(update) {
       queue.push({ update_id: updateId++, ...update });
     },
-    photo(person, group) {
+    photo(person, group, from = CHAT) {
       api.push({
         message: {
           message_id: ++messageId,
-          chat: { id: CHAT, type: "private" },
-          from: { id: CHAT },
+          chat: { id: from, type: "private" },
+          from: { id: from },
           media_group_id: group,
           photo: [
             {
@@ -658,12 +658,12 @@ async function withBot(mode, steps) {
         },
       });
     },
-    text(text) {
+    text(text, from = CHAT) {
       api.push({
         message: {
           message_id: ++messageId,
-          chat: { id: CHAT, type: "private" },
-          from: { id: CHAT },
+          chat: { id: from, type: "private" },
+          from: { id: from },
           text,
         },
       });
@@ -1205,10 +1205,10 @@ async function profilVaStatistika() {
   });
 }
 
-// ───── 11. /restart: holat, tasdiq va haqiqiy to'xtash ─────
+// ───── 12. /restart: holat, tasdiq va haqiqiy to'xtash ─────
 
 async function qaytaIshgaTushirish() {
-  console.log("\n11) /restart — holat, tasdiq va botning to'xtashi");
+  console.log("\n12) /restart — holat, tasdiq va botning to'xtashi");
   await withBot("full", async (bot) => {
     bot.text("/restart");
     const ask = await bot.wait(
@@ -1235,6 +1235,73 @@ async function qaytaIshgaTushirish() {
       "Bot haqiqatan to'xtadi (7 kodi bilan)",
       bot.exited.code === 7,
       `chiqish kodi: ${bot.exited.code}`,
+    );
+  });
+}
+
+// ───── 11. Yangi xodimga ruxsat berish ─────
+
+async function yangiXodim() {
+  console.log("\n11) /xodim — yangi xodimga chat raqami bo'yicha ruxsat");
+  const YANGI = CHAT + 7; // hali ruxsati yo'q odam
+  await withBot("full", async (bot) => {
+    // 1. Ruxsatsiz odam hech narsa qilolmaydi
+    bot.text("/start", YANGI);
+    const denied = await bot.wait(
+      "ruxsatsiz javobi",
+      (c) => c.method === "sendMessage" && c.body.chat_id === YANGI,
+    );
+    check(
+      "Ruxsatsiz odam ichkariga kirolmaydi",
+      /faqat xodimlar uchun/.test(denied.body.text ?? ""),
+      (denied.body.text ?? "").split("\n")[0],
+    );
+
+    // 2. Egasi uni chat raqami bo'yicha qo'shadi
+    bot.text(`/xodim ${YANGI}`);
+    const added = await bot.wait(
+      "qo'shildi xabari",
+      (c) =>
+        c.method === "sendMessage" &&
+        c.body.chat_id === CHAT &&
+        /ruxsat oldi/.test(c.body.text ?? ""),
+    );
+    check(
+      "Egasi chat raqami bo'yicha ruxsat beradi",
+      /bazada saqlandi/.test(added.body.text ?? ""),
+      (added.body.text ?? "").split("\n")[0],
+    );
+
+    // 3. Endi u haqiqatan ishlatadi — pasport o'qiladi
+    bot.photo(people[0], "albom-yangi", YANGI);
+    await bot.wait(
+      "yangi xodimning hisoboti",
+      (c) => c.method === "editMessageText" && c.body.chat_id === YANGI,
+      60_000,
+    );
+    const mine = bot.calls
+      .filter((c) => c.method === "editMessageText" && c.body.chat_id === YANGI)
+      .map((c) => c.body.text ?? "")
+      .join("\n");
+    check(
+      "Yangi xodim pasport o'qiydi",
+      /1 \/ 1 o'qildi/.test(mine) && /BOYQOBILOV/.test(mine),
+      (mine.match(/Natija.*/) ?? [""])[0],
+    );
+
+    // 4. Boshqa xodim ruxsat tarqatolmaydi
+    bot.text(`/xodim ${CHAT + 8}`, YANGI);
+    const refused = await bot.wait(
+      "oddiy xodimga rad javobi",
+      (c) =>
+        c.method === "sendMessage" &&
+        c.body.chat_id === YANGI &&
+        /bot egasi|ruxsat oldi/.test(c.body.text ?? ""),
+    );
+    check(
+      "Oddiy xodim yangi odam qo'sha olmaydi",
+      /faqat bot egasi/.test(refused.body.text ?? ""),
+      (refused.body.text ?? "").split("\n")[0],
     );
   });
 }
@@ -1291,6 +1358,7 @@ try {
   await idIkkiTomon();
   await ochiqPasport();
   await profilVaStatistika();
+  await yangiXodim();
   await qaytaIshgaTushirish();
 } catch (err) {
   check("SINOV UZILDI", false, err.message);

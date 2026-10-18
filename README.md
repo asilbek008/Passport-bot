@@ -151,9 +151,33 @@ bor odam — ya'ni siz — ko'radi. Shuning uchun bu xavfsiz.
 
 ### Hamkasbni qo'shish
 
-Botda `/kod` yozasiz — bir martalik kod beradi. Hamkasbingiz botni ochib shu
-kodni yuborsa, u ham ruxsat oladi. `/xodimlar` — ro'yxat, `/xodim_ochir <raqam>`
-— ruxsatni olib tashlash.
+Ikki yo'l bor.
+
+**Chat raqamini bilsangiz** (eng qisqa yo'l) — botda:
+
+```
+/xodim 123456789
+```
+
+Shu zahoti ruxsat beriladi va **bazada** saqlanadi, ya'ni botni qayta ishga
+tushirsangiz ham qoladi. Hamkasb botni ochib /start yozsa, ishlatishi mumkin —
+undan hech narsa talab qilinmaydi.
+
+Xodim o'z chat raqamini @userinfobot ga /start yozib biladi (yoki botga
+yozsa, rad javobida o'z raqamini ko'radi).
+
+Ruxsat berish — **faqat bot egasiga** (`.env` dagi `SUPERADMIN`, ko'rsatilmagan
+bo'lsa ro'yxatdagi eng birinchi xodim). Oddiy xodim yangi odam qo'sha olmaydi:
+ruxsat zanjir bo'lib tarqab ketmasligi kerak.
+
+**Chat raqamini bilmasangiz** — `/kod` yozasiz, bir martalik kod beradi;
+hamkasbingiz botni ochib shu kodni yuborsa, u ham ruxsat oladi.
+
+`/xodimlar` — ro'yxat (bazadagilar va `.env` dagilar alohida ko'rinadi),
+`/xodim_ochir <raqam>` — ruxsatni olib tashlash.
+
+`.env` dagi `OPERATORS` ro'yxati esa botdan **o'chirilmaydi** — serverda
+"zaxira kalit" sifatida bittasini yozib qo'yish mumkin.
 
 ---
 
@@ -289,6 +313,7 @@ tugmasi qilib ko'rsatadi.
 | `/ogohlik` | Pasporti tez tugaydiganlar |
 | `/ochir AB1234567` | Bitta yozuvni va rasmini o'chiradi |
 | `/tozalash` | Saqlash muddati o'tganlarni o'chiradi |
+| `/xodim 123456789` | Chat raqami bo'yicha darhol ruxsat beradi (faqat egasi) |
 | `/kod` | Yangi xodim uchun bir martalik kod |
 | `/xodimlar` | Ruxsat berilganlar ro'yxati |
 | `/xodim_ochir 123456789` | Ruxsatni olib tashlaydi |
@@ -838,8 +863,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 355 test — bo'laklar alohida
-npm run sinov    # 50 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 359 test — bo'laklar alohida
+npm run sinov    # 54 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -867,7 +892,7 @@ qaytadi — aynan xodim ko'radigan tartibda. Telegram ham, Gemini ham soxta
 - sizning `.env`, bazangiz va rasmlaringizga **tegmaydi** — hammasi
   vaqtinchalik papkada ishlaydi va o'chadi.
 
-Tekshiriladigan o'n bir holat: oddiy yo'l (2 pasport → tugmalar → Excel va
+Tekshiriladigan o'n ikki holat: oddiy yo'l (2 pasport → tugmalar → Excel va
 zip, fayl nomlari `ism_familiya_turi.jpg`, rasm qirqilgani), yonboshlagan
 rasm to'g'rilanishi, API kaliti xato bo'lganda xodimga tushunarli xabar
 chiqishi, **qo'lda ushlangan qiyshiq pasport** (arxivda stol va qo'l
@@ -879,7 +904,10 @@ ID kartaning ikkala tomoni birga yuborilganda bitta hujjat bo'lib,
 xatosiz chiqishi, ochiq pasportda MRZ faqat tasma ko'rinishida
 o'qilishi — tasma esa uchinchi urinishda, kuchliroq model bilan
 ketishi, `/profil` bilan `/statistika` ishlashi (ichida mijoz
-ismi yo'qligi ham tekshiriladi), va `/restart` bosilganda botning
+ismi yo'qligi ham tekshiriladi), `/xodim` bilan yangi xodimga ruxsat
+berilishi (ruxsatsiz odam kirolmasligi, qo'shilgandan keyin haqiqatan
+pasport o'qiy olishi va oddiy xodim ruxsat tarqatolmasligi), va
+`/restart` bosilganda botning
 haqiqatan 7 kodi bilan to'xtashi.
 
 Nimani tekshirmaydi: Telegramning O'ZI tugmalarni qanday chizishini. Buning

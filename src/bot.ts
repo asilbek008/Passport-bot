@@ -683,6 +683,45 @@ async function handleCommand(
       );
       return;
 
+    /**
+     * Chat raqami bo'yicha darhol ruxsat berish.
+     *
+     * /kod bilan qo'shish uchun hamkasb o'zi botga kod yuborishi kerak
+     * edi. Egasi xodimning chat raqamini bilsa (@userinfobot aytadi),
+     * shuning hojati yo'q. Ruxsat bazada qoladi — qayta ishga
+     * tushirishdan keyin ham ishlaydi.
+     *
+     * Faqat egasi: ruxsat berish eng nozik amal, zanjir bo'lib
+     * tarqamasligi kerak.
+     */
+    case "xodim": {
+      if (!owner(chatId, store)) {
+        await tg.sendMessage(chatId, t.addDenied);
+        return;
+      }
+      const raw = argument.replace(/\s+/g, "");
+      if (!raw) {
+        await tg.sendMessage(chatId, t.needChatIdAdd);
+        return;
+      }
+      if (!/^-?\d{1,19}$/.test(raw)) {
+        await tg.sendMessage(chatId, t.badChatId);
+        return;
+      }
+      const id = Number(raw);
+      if (!Number.isSafeInteger(id) || id === 0) {
+        await tg.sendMessage(chatId, t.badChatId);
+        return;
+      }
+      if (isOperator(id) || store.isOperator(id)) {
+        await tg.sendMessage(chatId, t.operatorAlready(id));
+        return;
+      }
+      store.addOperator(id);
+      await reply(tg, chatId, t.operatorAdded(id));
+      return;
+    }
+
     case "xodim_ochir": {
       const id = Number(argument.replace(/\s+/g, ""));
       if (!argument || !Number.isInteger(id)) {

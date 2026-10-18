@@ -585,6 +585,74 @@ test("/xodimlar .env va bazadagilarni birga ko'rsatadi", async () => {
   store.close();
 });
 
+test("/xodim chat raqami bo'yicha doimiy ruxsat beradi", async () => {
+  const { deps, sent, queued, store } = makeDeps({});
+  // Bazadagi birinchi xodim — bot egasi (SUPERADMIN qo'yilmaganda)
+  store.addOperator(OPERATOR);
+
+  await handleUpdate(textUpdate(OPERATOR, "/xodim 555123456"), deps as never);
+
+  assert.match(sent.at(-1)!.text, /ruxsat oldi/);
+  assert.equal(store.isOperator(555123456), true, "bazada qolishi kerak");
+
+  // Ruxsat BAZADA — ya'ni qayta ishga tushirishdan keyin ham ishlaydi.
+  // Shuni tekshirish uchun yangi xodim nomidan rasm yuboramiz
+  await handleUpdate(photoUpdate(555123456, "f9"), deps as never);
+  assert.equal(queued.length, 1, "yangi xodimning rasmi navbatga tushsin");
+  store.close();
+});
+
+test("/xodim — faqat bot egasi, boshqa xodim qo'sha olmaydi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  store.addOperator(OPERATOR);
+
+  // Egasi `.env` da ko'rsatilgan (xodimning o'zi emas). Bazadagi
+  // tartibga tayanmaymiz: bir soniyada qo'shilganlar chat raqami
+  // bo'yicha saralanadi va "birinchi" boshqa odam bo'lib qolardi
+  const before = process.env.SUPERADMIN;
+  process.env.SUPERADMIN = "777";
+  try {
+    await handleUpdate(textUpdate(OPERATOR, "/xodim 555123456"), deps as never);
+  } finally {
+    if (before === undefined) delete process.env.SUPERADMIN;
+    else process.env.SUPERADMIN = before;
+  }
+
+  assert.match(sent.at(-1)!.text, /faqat bot egasi/);
+  assert.equal(store.isOperator(555123456), false, "qo'shilmasligi kerak");
+  store.close();
+});
+
+test("/xodim yaroqsiz raqamni rad etadi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  store.addOperator(OPERATOR);
+
+  for (const bad of ["abc", "12 34 abc", "@someone", "1e9", "0"]) {
+    await handleUpdate(textUpdate(OPERATOR, `/xodim ${bad}`), deps as never);
+    assert.match(sent.at(-1)!.text, /faqat sonlardan/, `rad etilsin: ${bad}`);
+  }
+  assert.equal(store.operatorCount(), 1, "hech kim qo'shilmasligi kerak");
+
+  // Raqamsiz — nima yozish kerakligini aytadi
+  await handleUpdate(textUpdate(OPERATOR, "/xodim"), deps as never);
+  assert.match(sent.at(-1)!.text, /Chat raqamini yozing/);
+  store.close();
+});
+
+test("/xodim takroriy qo'shishni aytadi", async () => {
+  const { deps, sent, store } = makeDeps({});
+  store.addOperator(OPERATOR);
+  store.addOperator(555123456);
+
+  await handleUpdate(textUpdate(OPERATOR, "/xodim 555123456"), deps as never);
+  assert.match(sent.at(-1)!.text, /allaqachon/);
+
+  // .env dagi xodim ham takror hisoblanadi
+  await handleUpdate(textUpdate(OPERATOR, `/xodim ${OPERATOR}`), deps as never);
+  assert.match(sent.at(-1)!.text, /allaqachon/);
+  store.close();
+});
+
 test("/xodim_ochir ruxsatni olib tashlaydi, o'zini emas", async () => {
   const { deps, sent, store } = makeDeps({});
   store.addOperator(333);

@@ -75,16 +75,39 @@ export const t = {
     for (const id of fromEnv) {
       lines.push(`• \`${id}\` _(.env)_${Number(id) === me ? " ← siz" : ""}`);
     }
-    lines.push("", "Qo'shish: /kod — yangi xodimga beriladigan kod");
+    lines.push("", "Qo'shish: `/xodim <raqam>` yoki /kod — hamkasbga kod");
     lines.push("O'chirish: `/xodim_ochir <raqam>`");
     return lines.join("\n");
   },
+
+  /**
+   * Chat raqami bo'yicha qo'shildi.
+   *
+   * NEGA KERAK: /kod bilan qo'shish uchun hamkasb o'zi botga kod
+   * yuborishi kerak. Egasi xodimning chat raqamini bilsa, shu ikki
+   * qadamning hojati yo'q — darhol ruxsat beriladi.
+   */
+  operatorAdded: (chatId: number) =>
+    [
+      `✅ \`${chatId}\` ruxsat oldi.`,
+      "",
+      "Ruxsat bazada saqlandi — botni qayta ishga tushirsangiz ham qoladi.",
+      "Xodim botni ochib /start yozsa, ishlatishi mumkin.",
+    ].join("\n"),
+  operatorAlready: (chatId: number) => `\`${chatId}\` allaqachon ruxsatli.`,
+  /** Ruxsat berish — faqat egasiga. Qo'shib bo'lingan ruxsat tarqab ketmasin. */
+  addDenied:
+    "Yangi xodimni faqat bot egasi qo'shadi. Hamkasbga kod berish: /kod",
+  badChatId:
+    "Chat raqami — faqat sonlardan iborat bo'ladi (masalan `123456789`).\n" +
+    "Xodim o'z raqamini @userinfobot dan biladi.",
 
   operatorRemoved: (chatId: number) => `\`${chatId}\` ruxsatdan chiqarildi.`,
   operatorNotFound: (chatId: number) =>
     `\`${chatId}\` bazada yo'q. _(.env dagi xodimni faqat .env dan o'chirasiz.)_`,
   cannotRemoveSelf: "O'zingizni ruxsatdan chiqara olmaysiz.",
   needChatId: "Chat raqamini yozing: `/xodim_ochir 123456789`",
+  needChatIdAdd: "Chat raqamini yozing: `/xodim 123456789`",
 
   /**
    * Bot tavsifi — bo'sh suhbatda, START tugmasi ustida ko'rinadi.
@@ -168,6 +191,7 @@ export const t = {
     "`/tozalash` — saqlash muddati o'tgan yozuvlarni o'chirish",
     "",
     "*Xodimlar:*",
+    "`/xodim <raqam>` — chat raqami bo'yicha darhol ruxsat berish",
     "`/kod` — yangi xodim uchun bir martalik kod",
     "`/xodimlar` — ruxsat berilganlar ro'yxati",
     "`/xodim_ochir <raqam>` — ruxsatni olib tashlash",
