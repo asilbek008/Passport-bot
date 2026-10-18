@@ -855,7 +855,22 @@ function seeded(seed: number) {
   };
 }
 
-test("hujjat hech qachon kesilmaydi (60 ta tasodifiy holat)", () => {
+/**
+ * EGASINING ASOSIY TALABI: pasportning iloji boricha TO'LIQ holda
+ * kesilgan rasmi. Chetda ingichka stol tasmasi qolishi — kamchilik;
+ * hujjatning bir qismi kesilib ketishi — xato.
+ *
+ * Shuning uchun bu test eng muhimi. Ikki marta kuchaytirildi:
+ *
+ *   • 60 holat → 200: 60 holat aynan nosoz holatni o'tkazib yuborardi
+ *     (yassi hujjat kadrning pastida bo'lganda aniqlashtirish stol
+ *     bo'ylab qochib ketardi va hujjatning 7 FOIZI qolgan rasm
+ *     arxivga tushardi);
+ *   • chegara 95% → 99%: 95% ham juda bo'sh edi. 600×400 hujjatda 5%
+ *     yo'qolishi — chetdan 15 pikselli tasma, ya'ni MRZ qatorining bir
+ *     qismi kesilishi mumkin edi va test buni "o'tdi" deb hisoblardi.
+ */
+test("hujjat hech qachon kesilmaydi (200 ta tasodifiy holat)", () => {
   const random = seeded(20261017);
   const width = 1200;
   const height = 900;
@@ -867,7 +882,8 @@ test("hujjat hech qachon kesilmaydi (60 ta tasodifiy holat)", () => {
     [70, 72, 75],
   ];
 
-  for (let round = 0; round < 60; round++) {
+  let worst = 1;
+  for (let round = 0; round < 200; round++) {
     // Hujjat: kadrning 15%–80% i, tasodifiy joyda
     const docW = 0.15 + random() * 0.6;
     const docH = 0.15 + random() * 0.6;
@@ -908,15 +924,54 @@ test("hujjat hech qachon kesilmaydi (60 ta tasodifiy holat)", () => {
     }
     const truePixels =
       Math.round((doc.x1 - doc.x0) * width) * Math.round((doc.y1 - doc.y0) * height);
+    const kept = red / truePixels;
+    if (kept < worst) worst = kept;
     assert.ok(
-      red >= truePixels * 0.95,
+      kept >= 0.99,
       `${round}-holat: hujjatning bo'lagi kesildi — ${red} / ${truePixels} piksel ` +
-        `(hujjat ${JSON.stringify(doc)}, chegara ${JSON.stringify(guess)})`,
+        `(${(kept * 100).toFixed(1)}%; hujjat ${JSON.stringify(doc)}, ` +
+        `chegara ${JSON.stringify(guess)})`,
     );
   }
 
-  // Kod umuman qirqmaydigan bo'lib qolmaganiga ishonch
-  assert.ok(croppedCount >= 40, `juda kam holat qirqildi: ${croppedCount} / 60`);
+  // Kod umuman qirqmaydigan bo'lib qolmaganiga ishonch: qirqish
+  // to'xtatilsa bu test o'z-o'zidan "o'tadigan" bo'lib qolardi
+  assert.ok(croppedCount >= 140, `juda kam holat qirqildi: ${croppedCount} / 200`);
+  assert.ok(worst >= 0.99, `eng yomon holat: ${(worst * 100).toFixed(1)}%`);
+});
+
+test("aniqlashtirish chegarani ko'p surganda piksel dalili talab qilinadi", () => {
+  // Nosozlikning AYNAN o'zi (tasodifiy holatlar o'lchovi topgan):
+  // hujjat — kadrning pastidagi yassi tasma (y 655–815), model chegarasi
+  // esa uning ustidan boshlanib ichida tugaydi (y 556–714).
+  // Aniqlashtirish stol bo'ylab y 0–653 ga qochib ketadi: maydon katta
+  // bo'lgani uchun eski kod dalil so'ramay qirqib yuborardi va
+  // hujjatning 7 foizi qolgan rasm chiqardi
+  const width = 1200;
+  const height = 900;
+  const doc = { x0: 0.262, y0: 0.655, x1: 0.986, y1: 0.815 };
+  const image = docJpeg(width, height, doc, [70, 72, 75]);
+
+  const result = cropToDocument(image, {
+    box: { x0: 195, y0: 556, x1: 1000, y1: 714 },
+    marginPct: 2,
+  });
+
+  if (result.cropped) {
+    // Qirqilsa — hujjat to'liq qolishi SHART
+    const out = decode(result.bytes, { useTArray: true });
+    let red = 0;
+    for (let i = 0; i < out.data.length; i += 4) {
+      if (out.data[i] > 150 && out.data[i + 1] < 110) red++;
+    }
+    const truePixels =
+      Math.round((doc.x1 - doc.x0) * width) * Math.round((doc.y1 - doc.y0) * height);
+    assert.ok(
+      red >= truePixels * 0.99,
+      `hujjatning faqat ${((red / truePixels) * 100).toFixed(1)}% i qoldi`,
+    );
+  }
+  // Qirqilmasligi ham to'g'ri javob: shubha bo'lsa qirqmaymiz
 });
 
 // ───────────────────────── borib-qaytish sinovi ─────────────────────────

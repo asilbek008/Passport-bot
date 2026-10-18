@@ -624,6 +624,39 @@ o'zi tuzalmaydi, 30 so'rovni bekorga sarflashdan ma'no yo'q. Pullik tarifda
 
 ---
 
+## Qirqish qanchalik ishonchli
+
+Egasining talabi: pasportning **iloji boricha to'liq** holda kesilgan
+rasmi. Chetda ingichka stol tasmasi qolishi — kamchilik; hujjatning bir
+qismi kesilib ketishi — **xato**.
+
+Shuning uchun qirqish tasodifiy holatlar bilan o'lchanadi: hujjat
+kadrning tasodifiy joyida, tasodifiy o'lchamda, model chegarasi esa
+**±12% ga xato qilgan** holatda. Har holatda hujjatning hamma pikseli
+natijada qolishi tekshiriladi (200 holat, chegara 99%).
+
+Shu o'lchov haqiqiy nosozlikni topdi: hujjat kadrning pastidagi yassi
+tasma bo'lganda (masalan ochiq pasportning faqat pastki qismi
+ko'ringanda) piksel bo'yicha aniqlashtirish stol bo'ylab "qochib"
+ketardi va **hujjatning 7 foizi** qolgan rasm arxivga tushardi.
+
+Sababi: aniqlashtirilgan chegaraning maydoni katta bo'lgani uchun kod
+piksel dalilini **so'ramay** o'tkazib yuborardi — holbuki `edgeContrast`
+o'sha chegarada to'rt tomondan faqat bittasida haqiqiy chet topgan edi.
+
+Endi dalil ikki holatda talab qilinadi: hujjat kadrda kichik bo'lsa
+(eski qoida) **yoki** aniqlashtirish modelning chegarasini 6 foizdan
+ko'p surgan bo'lsa. Mantiqi oddiy: aniqlashtirishning maqsadi modelni
+tuzatish; siljish kichik bo'lsa ikkisi bir xil joyni ko'rsatdi, katta
+bo'lsa esa **biri qattiq adashgan** va uchinchi dalilsiz ishonib
+bo'lmaydi.
+
+O'lchov natijasi: eng yomon holatda hujjatning **99.4 foizi** qoladi
+(avval 7 foizga tushardi), qirqiladigan holatlar soni esa deyarli
+o'zgarmadi (200 dan 160 → 159).
+
+---
+
 ## Provayder tanlovi: Gemini yoki Claude
 
 Rasmdan MRZ o'qish — modelning yagona ishi. Qolgan hammasi (tekshiruv
@@ -863,7 +896,7 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 360 test — bo'laklar alohida
+npm test         # 361 test — bo'laklar alohida
 npm run sinov    # 55 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```

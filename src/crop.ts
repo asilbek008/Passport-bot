@@ -85,6 +85,17 @@ const CONFIRM_BELOW_AREA = 0.08;
 const EDGES_NEEDED = 3;
 
 /**
+ * Piksel bo'yicha aniqlashtirish modelning chegarasini shundan ko'p
+ * surgan bo'lsa (0–1000 shkalasida), qirqish uchun piksel dalili ham
+ * talab qilinadi.
+ *
+ * Model odatda bir-ikki foizga adashadi; 6 foizdan katta siljish esa
+ * "ikkisidan biri qattiq adashgan" degani va tekshirmasdan ishonib
+ * bo'lmaydi.
+ */
+const MOVED_NEEDS_PROOF = 60;
+
+/**
  * Burilish chorakdan (90°) shuncha darajadan ko'p farq qilsa, burilmaydi.
  * Model holatni aniq bilmagan degani.
  */
@@ -1243,10 +1254,42 @@ export function cropToDocument(
       const { box: refined, capped, collapsed } = refineBox(small, base);
       const share =
         (((refined.x1 - refined.x0) / 1000) * (refined.y1 - refined.y0)) / 1000;
-      // Kichik hujjat (uzoqdan olingan) uchun ikkinchi dalil: aytilgan
-      // joyda haqiqatan narsa chegarasi bormi
+
+      /**
+       * Aniqlashtirish modelning chegarasini qanchalik surdi (eng katta
+       * siljish, 0–1000 shkalasida).
+       *
+       * MUHIM: aniqlashtirishning maqsadi — modelni TUZATISH. Siljish
+       * kichik bo'lsa, model ham, piksellar ham bir xil joyni ko'rsatdi
+       * — ishonchli. Siljish katta bo'lsa, ikkisidan BIRI qattiq
+       * adashgan, shuning uchun uchinchi dalil kerak.
+       */
+      const moved = Math.max(
+        Math.abs(refined.x0 - base.x0),
+        Math.abs(refined.x1 - base.x1),
+        Math.abs(refined.y0 - base.y0),
+        Math.abs(refined.y1 - base.y1),
+      );
+
+      /**
+       * Piksel dalili: chegaraning to'rt tomonida haqiqatan narsa cheti
+       * (rang sakrashi) bormi.
+       *
+       * Ikki holatda talab qilinadi:
+       *   • hujjat kadrda kichik (uzoqdan olingan) — eski qoida;
+       *   • aniqlashtirish chegarani KO'P surgan (`MOVED_NEEDS_PROOF`).
+       *
+       * Ikkinchisi tasodifiy holatlar o'lchovi ko'rsatgan nosozlik uchun
+       * qo'shildi: yassi hujjat (kadrning pastidagi ingichka tasma)
+       * bo'lganda aniqlashtirish stol bo'ylab "qochib" ketdi va
+       * hujjatning faqat 7 FOIZI qolgan rasm arxivga tushdi. Maydon
+       * katta bo'lgani uchun eski `share >= CONFIRM_BELOW_AREA` sharti
+       * dalilni so'ramay o'tkazib yuborardi — holbuki `edgeContrast`
+       * o'sha chegarada to'rt tomondan faqat bittasini topgan edi.
+       */
+      const proof = edgeContrast(small, refined) >= EDGES_NEEDED;
       const confirmed =
-        share >= CONFIRM_BELOW_AREA || edgeContrast(small, refined) >= EDGES_NEEDED;
+        moved > MOVED_NEEDS_PROOF ? proof : share >= CONFIRM_BELOW_AREA || proof;
 
       // Qaror aniqlashtirilgan chegara ustida: shakli hujjatga
       // o'xshaydimi, chetlari topildimi (`capped` — topilmadi, ya'ni
