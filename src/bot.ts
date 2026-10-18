@@ -1257,30 +1257,56 @@ async function closerLook(
   const box = keep.box;
   const quad = keep.quad;
 
-  // ── Qayta urinish: HUJJATGA kesib, yana ikkita rasm bilan.
+  // ── 2-urinish: HUJJATNING O'ZI.
   //
-  // Birinchi so'rovda butun kadr va uning pastki yarmi ketgan edi.
-  // Endi hujjatning o'zi va o'sha hujjatning pastki qismi yuboriladi:
-  // MRZ yana bir necha barobar yiriklashadi.
-  //
-  // Bitta qayta urinish — ataylab: har qo'shimcha so'rov butun to'plamni
-  // sekinlashtiradi va pul ketadi. Ikki xil yaqinlik yetarli.
-  if (!box && !quad) return keep;
+  // Model hujjat qayerdaligini aytdi — o'sha joyni kesib, yaqindan
+  // ko'rsatamiz. Endi hujjat butun kadrni egallaydi.
+  const closer =
+    box || quad ? cropToDocument(image, { box, quad, marginPct: 6 }) : null;
 
-  const closer = cropToDocument(image, { box, quad, marginPct: 6 });
-  if (!closer.cropped) return keep;
+  // Hujjat qayerdaligi aytilmagan (yoki kesish ishonchsiz) — qayerni
+  // kesishni bilmaymiz. Shunda butun kadrni KUCHLIROQ modelga beramiz:
+  // yaqinlashtirish yo'q, lekin mayda qatorlarni u ko'proq o'qiydi.
+  // Avval bu yerda bitta so'rovdan keyin to'xtardik va xodim
+  // "MRZ topilmadi" degan javob olardi, holbuki hujjat ko'rinib turardi
+  if (!closer?.cropped) {
+    if (!config.fallbackModel) return keep;
+    await deps.throttle?.wait();
+    const stronger = await deps.read(image, now, { model: config.fallbackModel });
+    return stronger.ok
+      ? { result: stronger, zoomed: false, box: boxOf(stronger), quad: quadOf(stronger) }
+      : keep;
+  }
 
   const closerImage = { bytes: closer.bytes, mime: "image/jpeg" };
-  const closerStrip = bottomStrip(closerImage, 0.55);
+  await deps.throttle?.wait();
+  const second = await deps.read(closerImage, now);
+  if (second.ok) return { result: second, zoomed: true, box, quad };
+
+  // ── 3-urinish: HUJJATNING MRZ ZONASI, kuchliroq model bilan.
+  //
+  // Bu yerda taxmin yo'q: hujjat qayerdaligi ma'lum, MRZ esa uning eng
+  // pastida. Ochiq pasportda hujjat kadrning yarmi, MRZ esa uning 10
+  // foizi — faqat shu tasmani ko'rsatganda qatorlar yirik chiqadi.
+  //
+  // Kuchliroq model faqat SHU YERDA ishlatiladi: u sekinroq va
+  // qimmatroq, lekin bu yo'lga faqat o'qilmagan rasmlar tushadi.
+  // Tasma faqat hujjat yotgan holatda (keng va past) olinadi:
+  // yonboshlagan rasmda MRZ pastda emas, chetda bo'ladi. Tasma
+  // chiqmasa — kesilgan hujjatning o'ziga kuchliroq model qaraydi.
+  const strip = bottomStrip(closerImage, 0.45);
+  if (!strip && !config.fallbackModel) return keep;
 
   await deps.throttle?.wait();
-  const second = await deps.read(
-    closerStrip
-      ? [closerImage, { bytes: closerStrip, mime: "image/jpeg" }]
-      : closerImage,
+  const third = await deps.read(
+    strip ? { bytes: strip, mime: "image/jpeg" } : closerImage,
     now,
+    {
+      hint: strip ? "mrz_strip" : undefined,
+      model: config.fallbackModel || undefined,
+    },
   );
-  return second.ok ? { result: second, zoomed: true, box, quad } : keep;
+  return third.ok ? { result: third, zoomed: true, box, quad } : keep;
 }
 
 /**
@@ -1314,24 +1340,44 @@ async function pool(
  * (viza arizasiga ilova qilish uchun), shuning uchun tozalashning ma'nosi
  * yo'q — o'qilmagan rasm esa baribir hech qayerga yozilmaydi.
  */
-async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> {
-  let image: { bytes: Uint8Array<ArrayBuffer>; mime: string };
-  try {
-    image = await deps.tg.download(fileId);
-  } catch {
-    return { kind: "failed", why: "faylni yuklab bo'lmadi" };
+/**
+ * Rasmni Telegram'dan yuklaydi, uzilib qolsa qayta uriniadi.
+ *
+ * Bir vaqtda bir nechta rasm yuklanadigan bo'lgandan keyin "faylni
+ * yuklab bo'lmadi" paydo bo'ldi: Telegram fayl serveri ba'zan ulanishni
+ * uzadi. Bu vaqtincha xato — bitta uzilishdan rasmni yo'qotmaymiz.
+ */
+async function downloadPhoto(
+  fileId: string,
+  deps: Deps,
+): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string } | null> {
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await deps.tg.download(fileId);
+    } catch {
+      // Xato matni yozilmaydi: ichida hujjat havolasi (file_path) bo'ladi
+      if (attempt === 3) return null;
+      await sleep(400 * attempt);
+    }
   }
+  return null;
+}
+
+async function readOne(fileId: string, deps: Deps, now: Date): Promise<Outcome> {
+  const image = await downloadPhoto(fileId, deps);
+  if (!image) return { kind: "failed", why: "faylni yuklab bo'lmadi" };
 
   try {
-    // BIRINCHI so'rovda ikkita rasm ketadi: butun kadr va uning pastki
-    // qismi (MRZ odatda shu yerda). Shu tufayli ochiq pasport ham
-    // birinchi urinishda o'qiladi — qayta so'rov kerak bo'lmaydi,
-    // ya'ni ham tezroq, ham arzonroq
-    const strip = bottomStrip(image, 0.5);
-    const first = await deps.read(
-      strip ? [image, { bytes: strip, mime: "image/jpeg" }] : image,
-      now,
-    );
+    // BIRINCHI so'rov — BITTA rasm, butun kadr.
+    //
+    // Bir vaqt ikkita rasm (kadr + uning pastki yarmi) yuborib ko'rildi
+    // va NATIJA YOMONLASHDI: 11 rasmdan 6 tasi o'qilardi, 3 taga tushdi.
+    // Sababi tushunarli — "pastki yarmi" ko'r taxmin: ko'p rasmda u
+    // yerda MRZ emas, stol yoki fon bo'ladi, model esa unga ishonib
+    // "o'qiy olmadim" deydi. Yaqin surat FAQAT model hujjat qayerdaligini
+    // aytgandan keyin, aniq joydan olinadi (pastda).
+    const first = await deps.read(image, now);
     // O'qilmagan bo'lsa — rasmni hujjatga kesib, YAQINDAN qayta o'qiymiz
     const { result, zoomed, box, quad } = await closerLook(first, image, deps, now);
 

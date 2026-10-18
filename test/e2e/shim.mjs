@@ -15,7 +15,11 @@ function rewrite(url) {
   const api = url.match(/^https:\/\/api\.telegram\.org\/bot[^/]+\/(.+)$/);
   if (api) return `http://127.0.0.1:${PORT}/tg/${api[1]}`;
   if (url.includes("generativelanguage.googleapis.com")) {
-    return `http://127.0.0.1:${PORT}/gemini`;
+    // Model nomi manzilda bo'ladi (`.../models/gemini-2.5-flash:...`).
+    // Soxta serverga uzatamiz — qaysi model so'ralgani tekshiriladi
+    const model = url.match(/\/models\/([^:?/]+)/);
+    const query = model ? `?model=${encodeURIComponent(model[1])}` : "";
+    return `http://127.0.0.1:${PORT}/gemini${query}`;
   }
   // Boshqa manzil bo'lmasligi kerak. Bo'lsa — sinov haqiqiy tarmoqqa
   // chiqib ketmasin: xato beramiz, jimgina o'tib ketmasin.

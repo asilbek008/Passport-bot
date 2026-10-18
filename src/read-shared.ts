@@ -189,27 +189,9 @@ export const USER_PROMPT_STRIP = [
   "document_box, document_quad va rotation kerak emas (null yoki 0).",
 ].join("\n");
 
-/**
- * IKKI RASM yuborilganda qo'shiladigan izoh.
- *
- * Nega: ochiq pasportda MRZ kadrning 5 foizi bo'ladi va model rasmni
- * o'z o'lchamiga kichraytirganda qatorlar o'qilmay qoladi. Shuning
- * uchun BIRINCHI so'rovdayoq pastki qismning yaqin surati ham
- * yuboriladi — qayta urinish kerak bo'lmaydi.
- */
-const PAIR_NOTE = [
-  "",
-  "DIQQAT: ikkita rasm berilgan. Birinchisi — butun kadr, ikkinchisi —",
-  "o'sha kadrning PASTKI qismi (MRZ odatda shu yerda, yaqindan ko'rinadi).",
-  "Ikkalasi BITTA hujjat. MRZ qatorlarini ikkinchi rasmdan o'qi — u",
-  "aniqroq; hujjat chegarasi (document_box, document_quad) va burilishni",
-  "esa BIRINCHI rasm bo'yicha, butun kadrga nisbatan ber.",
-].join("\n");
-
 /** Topshiriq matnini tanlaydi. */
-export function promptFor(hint: ReadHint, images = 1): string {
-  const base = hint === "mrz_strip" ? USER_PROMPT_STRIP : USER_PROMPT;
-  return images > 1 ? `${base}\n${PAIR_NOTE}` : base;
+export function promptFor(hint: ReadHint): string {
+  return hint === "mrz_strip" ? USER_PROMPT_STRIP : USER_PROMPT;
 }
 
 export type ReadResult =

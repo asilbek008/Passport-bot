@@ -448,29 +448,44 @@ Qaysi tomoni ekanini model aytadi (`id_side`). Bu muhim: orqa tomonini
 yuborgan odamga «teskari qiling» desak, u kartani aylantirib
 yuraveradi va muammo hech qachon hal bo'lmaydi.
 
-**MRZ tasmasi BIRINCHI so'rovdayoq yuboriladi.** Modellar rasmni o'z
-o'lchamiga kichraytiradi. Ochiq pasportda MRZ kadrning 5-10 foizi
-bo'ladi va kichraytirishdan keyin qatorlar o'qilmay qoladi. Shuning
-uchun bot **ikkita rasm** yuboradi: butun kadr va uning pastki yarmi
-(MRZ odatda shu yerda). Ikkalasi bitta so'rovda ketadi — ya'ni
-qo'shimcha kutish yo'q, aksincha: avval bu uchinchi urinishda qilinardi
-va bitta hujjat uchun uchta so'rov ketardi.
+### O'qilmasa: uch qadam, har biri yaqinroqdan
 
-**Baribir o'qilmasa — hujjatga kesib, bir marta qayta so'raladi.** Modellar rasmni o'z o'lchamiga kichraytirib oladi. Xodim ID
-kartani kadrning uchdan birida suratga olsa, kichraytirishdan keyin MRZ
+Modellar rasmni o'z o'lchamiga kichraytirib oladi. Xodim ID kartani
+kadrning uchdan birida suratga olsa, kichraytirishdan keyin MRZ
 qatorlari bir necha pikselga tushib qoladi va o'qilmaydi — hujjat esa
 odam ko'ziga aniq ko'rinib turadi. Pasportda bu kamroq uchraydi (u
 kattaroq, MRZ ham yirikroq), **ID kartada esa doimiy muammo**.
 
-Shuning uchun model "o'qiy olmadim" desa, bot u aytgan chegara bo'yicha
-rasmni hujjatga kesadi va **bir marta** qayta so'raydi: endi hujjat
-butun kadrni egallaydi va MRZ bir necha barobar yirik bo'ladi. Hisobotda
-"N tasi yaqindan qayta o'qildi" deb aytiladi — xodim keyingi safar
-hujjatni kadrga to'ldirib oladi.
+Shuning uchun o'qilmagan rasm bosqichma-bosqich yaqinlashtiriladi:
 
-Qayta so'rovda ham ikkita rasm ketadi: hujjatning o'zi va uning pastki
-qismi — MRZ yana bir necha barobar yiriklashadi. Ko'pi bilan **ikki
-so'rov**: har qo'shimcha so'rov butun to'plamni sekinlashtiradi.
+| Urinish | Modelga nima ketadi | Model |
+|---|---|---|
+| 1 | butun kadr | `GEMINI_MODEL` |
+| 2 | **hujjatning o'zi** — model aytgan chegara bo'yicha kesilgan | `GEMINI_MODEL` |
+| 3 | **hujjatning MRZ zonasi** — kesilgan hujjatning pastki 45% i | `FALLBACK_MODEL` |
+
+Har qadamda MRZ bir necha barobar yiriklashadi. Hisobotda "N tasi
+yaqindan qayta o'qildi" deb aytiladi — xodim keyingi safar hujjatni
+kadrga to'ldirib oladi.
+
+**MRZ tasmasi birinchi so'rovda yuborilmaydi.** Bir vaqtda kadr va
+uning pastki yarmini birga yuborib ko'rildi — bitta so'rov bilan
+tugaydi degan hisobda. **Natija yomonlashdi: 11 rasmdan 6 tasi
+o'qilardi, 3 taga tushdi.** Sababi tushunarli: "pastki yarmi" ko'r
+taxmin — ko'p rasmda u yerda MRZ emas, stol yoki fon bo'ladi, model
+esa unga ishonib "o'qiy olmadim" deydi. Tasma faqat model hujjat
+qayerdaligini aytgandan keyin, **aniq joydan** olinadi.
+
+Uchinchi urinishda **kuchliroq model** ishlatiladi (`FALLBACK_MODEL`,
+Geminida standart `gemini-2.5-pro`). Unga faqat muammoli rasmlar
+tushadi — shuning uchun narx deyarli oshmaydi, mayda MRZ qatorlarida
+esa farq katta. O'chirish: `FALLBACK_MODEL=off`.
+
+**Model hujjat qayerdaligini aytmagan bo'lsa** (yoki kesish ishonchsiz
+bo'lsa) qayerni kesishni bilmaymiz — shunda butun kadr bir marta
+kuchliroq modelga beriladi. Avval bu yerda bitta so'rovdan keyin
+to'xtardik va xodim «MRZ topilmadi» degan javob olardi, holbuki hujjat
+rasmda ko'rinib turardi.
 
 Qayta urinish faqat "ko'rinmadi" turidagi sabablarda bo'ladi. ID
 kartaning **old tomoni** yuborilgan bo'lsa yoki rasmda hujjat umuman
@@ -518,17 +533,23 @@ ham to'plam to'xtamaydi — shunchaki sekinroq bo'ladi.
 
 | Provayder | Standart | Nega |
 |---|---|---|
-| Gemini | 10 / daqiqa | bepul tarifda chegara 10–15 |
-| Anthropic | 40 / daqiqa | chegarasi balandroq |
+| Gemini | 30 / daqiqa | bepul tarifda chegara 10–15, lekin bot o'zi sekinlashadi |
+| Anthropic | 60 / daqiqa | chegarasi balandroq |
 
-Ya'ni 30 rasmlik guruh ~3 daqiqada o'qiladi. Bu ataylab: avval bot
-to'xtamasdan yuborardi va 11-rasmda chegaraga urilib, **butun to'plam
-to'xtab qolardi**. Tezlikdan ko'ra to'xtamasligi muhim.
+Avval bot ataylab sekin boshlardi (Geminida daqiqada 10) — chegaraga
+urilib **butun to'plam to'xtab qolmasligi** uchun. Endi to'xtash o'rniga
+sekinlashish bor, shuning uchun tezroq boshlash xavfsiz: tarifi
+baland bo'lsa to'plam bir necha barobar tez o'qiladi, bepul tarifda esa
+baribir to'xtamaydi.
 
 Baribir chegaraga urilsa (masalan ikki xodim bir vaqtda ishlayotgan bo'lsa),
 bot kutib **3 marta qayta urinadi** (2s, 4s). Shundan keyin ham bo'lmasa —
 to'plam to'xtaydi va "bu vaqtincha muammo, bir-ikki daqiqadan keyin qayta
 yuboring" deb aytadi.
+
+Rasmni Telegram'dan yuklash ham **3 marta urinadi** (0.4s, 0.8s). Bir
+vaqtda bir nechta rasm yuklanganda Telegram fayl serveri ba'zan
+ulanishni uzadi — bitta uzilishdan rasm yo'qolmasligi kerak.
 
 Kalit xato yoki hisobda mablag' yo'q bo'lsa — qayta urinmaydi: bunday xato
 o'zi tuzalmaydi, 30 so'rovni bekorga sarflashdan ma'no yo'q. Pullik tarifda
@@ -546,6 +567,7 @@ almashtirish bir qator sozlama:
 PROVIDER=gemini
 GEMINI_API_KEY=AIza...
 GEMINI_MODEL=gemini-2.5-flash
+FALLBACK_MODEL=gemini-2.5-pro
 ```
 
 **Shuning uchun provayder tanlovi ishonchlilikka ta'sir qilmaydi.**
@@ -774,8 +796,8 @@ windows/
 Tekshirish:
 
 ```bash
-npm test         # 340 test — bo'laklar alohida
-npm run sinov    # 48 tekshiruv — botning O'ZI ishga tushiriladi
+npm test         # 342 test — bo'laklar alohida
+npm run sinov    # 50 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
@@ -804,7 +826,8 @@ tomoni xira bo'lganda «teskari qiling» deyilmasligi, va kadrda kichik
 ID karta birinchi urinishda o'qilmay, kesilgandan keyin o'qilishi, va
 ID kartaning ikkala tomoni birga yuborilganda bitta hujjat bo'lib,
 xatosiz chiqishi, ochiq pasportda MRZ faqat tasma ko'rinishida
-o'qilishi, `/profil` bilan `/statistika` ishlashi (ichida mijoz
+o'qilishi — tasma esa uchinchi urinishda, kuchliroq model bilan
+ketishi, `/profil` bilan `/statistika` ishlashi (ichida mijoz
 ismi yo'qligi ham tekshiriladi), va `/restart` bosilganda botning
 haqiqatan 7 kodi bilan to'xtashi.
 
@@ -928,7 +951,7 @@ qo'shishda *File* emas, oddiy **rasm** (galereya) sifatida yuboring — Telegram
 o'zi siqib beradi va MRZ shunda ham o'qiladi.
 
 **30 rasm sekin o'qilyapti** — bu ataylab: API chegarasiga urilmaslik uchun
-so'rovlar daqiqada `REQUESTS_PER_MINUTE` (Geminida 10) qilib taqsimlanadi.
+so'rovlar daqiqada `REQUESTS_PER_MINUTE` (Geminida 30) qilib taqsimlanadi.
 Pullik tarifda `.env` da oshirib qo'ying.
 
 **«O'qilmoqda...» da qotib qoldi** — eski versiyada so'rovlarga muddat

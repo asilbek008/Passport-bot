@@ -337,7 +337,9 @@ async function withBot(mode, steps) {
         // Model qatorlarni faqat TASMA ko'rinishidagi rasmdan o'qiydi
         const isStrip = pictures.some((img) => img.width / img.height > 2.2);
         geminiHits.push(
-          `${pictures.length} rasm` + (isStrip ? " (tasma bor)" : " (tasmasiz)"),
+          `${pictures.length} rasm` +
+            (isStrip ? " (tasma bor)" : " (tasmasiz)") +
+            ` · ${url.searchParams.get("model") ?? "?"}`,
         );
         return send({
           candidates: [
@@ -1131,9 +1133,25 @@ async function ochiqPasport() {
     );
     const report = bot.reports();
     check("Pasport o'qildi", /1 \/ 1 o'qildi/.test(report) && /BOYQOBILOV/.test(report));
+    // Uch qadam: butun kadr → hujjatning o'zi → hujjatning MRZ zonasi.
+    // Tasma ko'r taxmin bilan BIRINCHI so'rovda yuborilmaydi — shunday
+    // qilib ko'rilgan va sifat tushgan (11 rasmdan 6 emas, 3 tasi)
     check(
-      "MRZ tasmasi BIRINCHI so'rovda ketdi (bitta so'rov yetdi)",
-      bot.geminiHits.length === 1 && bot.geminiHits[0].includes("tasma bor"),
+      "Tasma faqat UCHINCHI so'rovda — hujjat joyi aniqlangandan keyin",
+      bot.geminiHits.length === 3 &&
+        bot.geminiHits.slice(0, 2).every((h) => h.includes("tasmasiz")) &&
+        bot.geminiHits[2].includes("tasma bor"),
+      bot.geminiHits.join(" → "),
+    );
+    check(
+      "Tasma kuchliroq model bilan o'qiladi",
+      bot.geminiHits[2]?.includes("gemini-2.5-pro") &&
+        bot.geminiHits[0]?.includes("gemini-2.5-flash"),
+      bot.geminiHits.map((h) => h.split("· ")[1]).join(" → "),
+    );
+    check(
+      "Har so'rovda bitta rasm ketadi",
+      bot.geminiHits.every((h) => h.startsWith("1 rasm")),
       bot.geminiHits.join(" → "),
     );
   });

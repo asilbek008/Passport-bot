@@ -115,6 +115,25 @@ export const config = {
    * (taqsimlagich baribir oraliq saqlaydi), lekin sezilarli tez.
    * Pullik tarifda 5-8 qilsa bo'ladi.
    */
+  /**
+   * O'qilmagan rasm uchun KUCHLIROQ model.
+   *
+   * Oddiy rasmlar tez va arzon model bilan o'qiladi. O'qilmagani esa
+   * oxirgi urinishda shu modelga beriladi — unga faqat muammoli
+   * rasmlar tushadi, shuning uchun narx deyarli oshmaydi, sifat esa
+   * sezilarli yaxshilanadi (mayda MRZ qatorlarida farq katta).
+   *
+   * Bo'sh qoldirilsa, Gemini'da `gemini-2.5-pro` ishlatiladi. Bu model
+   * kalitingizda bo'lmasa, oddiygina o'tkazib yuboriladi — bot
+   * buzilmaydi. Butunlay o'chirish: FALLBACK_MODEL=off
+   */
+  get fallbackModel(): string {
+    const given = (process.env.FALLBACK_MODEL ?? "").trim();
+    if (given === "off") return "";
+    if (given) return given;
+    return this.provider === "gemini" ? "gemini-2.5-pro" : "";
+  },
+
   get concurrency(): number {
     return Math.max(1, Math.min(12, num("CONCURRENCY", 3)));
   },

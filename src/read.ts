@@ -29,19 +29,32 @@ export async function readDocument(
    */
   image: Image | Image[],
   today = new Date(),
+  options: ReadOptions = {},
+): Promise<ReadResult> {
+  if (config.provider === "gemini") {
+    const { readWithGemini } = await import("./vision-gemini.ts");
+    return readWithGemini(image, today, options);
+  }
+  const { readDocument: readWithAnthropic } = await import("./vision.ts");
+  return readWithAnthropic(image, today, options);
+}
+
+/** O'qish sozlamalari. */
+export type ReadOptions = {
   /**
    * Rasm qanday ko'rinishda: `mrz_strip` — faqat MRZ zonasining yaqin
    * surati (hujjatning o'zi ko'rinmaydi), shuning uchun topshiriq boshqa.
    */
-  hint?: ReadHint,
-): Promise<ReadResult> {
-  if (config.provider === "gemini") {
-    const { readWithGemini } = await import("./vision-gemini.ts");
-    return readWithGemini(image, today, hint);
-  }
-  const { readDocument: readWithAnthropic } = await import("./vision.ts");
-  return readWithAnthropic(image, today, hint);
-}
+  hint?: ReadHint;
+  /**
+   * Boshqa model bilan o'qish.
+   *
+   * Oddiy rasmlar tez va arzon model bilan o'qiladi; o'qilmagani esa
+   * oxirgi urinishda KUCHLIROQ modelga beriladi. Shu yo'lga faqat
+   * muammoli rasmlar tushadi, ya'ni narx deyarli oshmaydi.
+   */
+  model?: string;
+};
 
 /** Hozirgi provayder haqida qisqa ma'lumot — ishga tushirishda ko'rsatiladi. */
 export function providerInfo(): { name: string; model: string; keyVar: string } {

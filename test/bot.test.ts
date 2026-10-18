@@ -221,9 +221,15 @@ function makeDeps(
 
   // `read` fileId'ni bilmaydi, shuning uchun download orqali uzatamiz
   let currentFile = "";
+  /** Nechta yuklash so'rovi bo'ldi — qayta urinishni sanash uchun */
+  const downloads: string[] = [];
+  /** Shu raqamgacha yuklash xato beradi (Telegram uzilishini sinash) */
+  const fail = { until: 0 };
   (tg as unknown as { download: (id: string) => Promise<unknown> }).download = async (
     id: string,
   ) => {
+    downloads.push(id);
+    if (downloads.length <= fail.until) throw new Error("ulanish uzildi");
     currentFile = id;
     return { bytes: imageBytes ?? new Uint8Array(8), mime: "image/jpeg" };
   };
@@ -231,10 +237,14 @@ function makeDeps(
   const calls: Record<string, number> = {};
   /**
    * Modelga yuborilgan rasmlar: HAR SO'ROV uchun bitta ro'yxat.
-   * Birinchi so'rovda ikkita rasm ketadi (butun kadr + MRZ tasmasi).
+   * Hozir har so'rovda bitta rasm ketadi, lekin ro'yxat shaklida —
+   * `read` bir nechta rasmni ham oladi.
    */
   const images: { bytes: Uint8Array; mime: string }[][] = [];
-  deps.read = (async (image: unknown) => {
+  /** Har so'rovda qaysi model so'ralgani (standart model — `null`) */
+  const models: (string | null)[] = [];
+  deps.read = (async (image: unknown, _today: unknown, options: unknown) => {
+    models.push((options as { model?: string } | undefined)?.model ?? null);
     const group = (Array.isArray(image) ? image : [image]) as {
       bytes: Uint8Array;
       mime: string;
@@ -263,7 +273,20 @@ function makeDeps(
     minutes: 60,
   });
 
-  return { deps, sent, edits, documents, queued, store, invites, calls, images };
+  return {
+    deps,
+    sent,
+    edits,
+    documents,
+    queued,
+    store,
+    invites,
+    calls,
+    images,
+    models,
+    downloads,
+    fail,
+  };
 }
 
 const photoUpdate = (chatId: number, fileId: string): TgUpdate => ({
@@ -1736,11 +1759,12 @@ test("ID kartaning old tomonida qayta urinilmaydi — bekorga pul ketmasin", asy
   store.close();
 });
 
-test("MRZ tasmasi BIRINCHI so'rovning o'zida yuboriladi", async () => {
-  // Avval tasma faqat uchinchi urinishda ketardi: bitta hujjat uchun
-  // uchta so'rov, ya'ni sekin va qimmat. Endi u birinchi so'rovda
-  // asosiy rasm bilan BIRGA ketadi
-  const { decode } = await import("jpeg-js");
+test("birinchi so'rovda BITTA rasm — butun kadr", async () => {
+  // Bir vaqt kadr bilan birga uning "pastki yarmi" ham yuborilardi.
+  // Natija YOMONLASHDI (11 rasmdan 6 emas, 3 tasi o'qildi): pastki
+  // yarim ko'r taxmin — ko'p rasmda u yerda MRZ emas, stol bo'ladi va
+  // model unga ishonib "o'qiy olmadim" deydi. Yaqin surat faqat model
+  // hujjat qayerdaligini aytgandan keyin, ANIQ joydan olinadi
   const source = await smallDocumentJpeg();
   const { deps, store, calls, images } = makeDeps(
     { f1: [{ ok: false, reason: "unreadable", problem: "xira" }] },
@@ -1749,17 +1773,106 @@ test("MRZ tasmasi BIRINCHI so'rovning o'zida yuboriladi", async () => {
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  // Chegara aytilmagan — qayta urinish mumkin emas, bitta so'rov
-  assert.equal(calls.f1, 1, "chegara yo'q — qayta so'rov yubormaymiz");
-  assert.equal(images[0].length, 2, "birinchi so'rovda ikkita rasm");
-
-  const full = decode(images[0][0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
-  const strip = decode(images[0][1].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
-  assert.ok(
-    strip.height < full.height * 0.6 && strip.width === full.width,
-    `tasma kadrning pastki qismi bo'lsin: ${strip.width}x${strip.height}`,
-  );
+  assert.equal(images[0].length, 1, "birinchi so'rovda faqat bitta rasm");
+  // Chegara aytilmagan — qayerni kesishni bilmaymiz, qayta urinish yo'q
+  assert.equal(calls.f1, 1);
   assert.equal(store.count(), 0);
+  store.close();
+});
+
+test("hujjat qayerdaligi aytilmasa — butun kadr kuchliroq modelga beriladi", async () => {
+  // Avval bu yerda to'xtardik: model chegarani aytmasa qayerni kesishni
+  // bilmaymiz. Lekin xodimga "MRZ topilmadi" deyishdan oldin bitta
+  // imkoniyat bor — mayda qatorlarni kuchliroq model ko'proq o'qiydi
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "300101",
+  });
+  const source = await smallDocumentJpeg();
+  const { deps, store, calls, images, models } = makeDeps(
+    {
+      f1: [
+        { ok: false, reason: "unreadable", problem: "xira" },
+        okResult(mrz),
+      ],
+    },
+    source,
+  );
+
+  const before = process.env.FALLBACK_MODEL;
+  process.env.FALLBACK_MODEL = "kuchli-model";
+  try {
+    await processBatch(OPERATOR, ["f1"], deps as never);
+  } finally {
+    if (before === undefined) delete process.env.FALLBACK_MODEL;
+    else process.env.FALLBACK_MODEL = before;
+  }
+
+  assert.equal(calls.f1, 2, "ikkinchi so'rov bo'ladi");
+  assert.deepEqual(
+    images[1][0].bytes,
+    images[0][0].bytes,
+    "o'sha asl rasm — qirqilmaydi, qayerni kesishni bilmaymiz",
+  );
+  assert.deepEqual(models, [null, "kuchli-model"], "faqat ikkinchisi kuchliroq");
+  assert.equal(store.count(), 1, "o'qildi");
+  store.close();
+});
+
+test("kuchliroq model o'chirilgan bo'lsa, bekorga so'rov ketmaydi", async () => {
+  const source = await smallDocumentJpeg();
+  const { deps, store, calls } = makeDeps(
+    { f1: [{ ok: false, reason: "unreadable", problem: "xira" }] },
+    source,
+  );
+
+  const before = process.env.FALLBACK_MODEL;
+  process.env.FALLBACK_MODEL = "off";
+  try {
+    await processBatch(OPERATOR, ["f1"], deps as never);
+  } finally {
+    if (before === undefined) delete process.env.FALLBACK_MODEL;
+    else process.env.FALLBACK_MODEL = before;
+  }
+
+  assert.equal(calls.f1, 1);
+  assert.equal(store.count(), 0);
+  store.close();
+});
+
+test("yuklash uzilsa qayta urinadi — rasm yo'qolmaydi", async () => {
+  // Rasmlar bir vaqtda yuklanadigan bo'lgandan keyin Telegram fayl
+  // serveri ba'zan ulanishni uzadi va rasm "faylni yuklab bo'lmadi"
+  // bo'lib qolardi. Bu vaqtincha xato — ikki marta qayta urinamiz
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "300101",
+  });
+  const { deps, store, downloads, fail } = makeDeps({ f1: okResult(mrz) });
+  fail.until = 2; // birinchi ikkita urinish uzilib qoladi
+  (deps as Record<string, unknown>).sleep = async () => {};
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(downloads.length, 3, "uchinchi urinishda yuklanadi");
+  assert.equal(store.count(), 1, "rasm baribir o'qiladi");
+  store.close();
+});
+
+test("yuklash butunlay ishlamasa, xodimga aytiladi", async () => {
+  const mrz = td3({
+    surname: "KARIMOV", given: "AZIZ", docNumber: "AB1234567",
+    birth: "850412", sex: "M", expiry: "300101",
+  });
+  const { deps, edits, store, downloads, fail } = makeDeps({ f1: okResult(mrz) });
+  fail.until = 99;
+  (deps as Record<string, unknown>).sleep = async () => {};
+
+  await processBatch(OPERATOR, ["f1"], deps as never);
+
+  assert.equal(downloads.length, 3, "cheksiz urinmaydi");
+  assert.equal(store.count(), 0);
+  assert.match(edits.at(-1)!.text, /yuklab bo'lmadi/);
   store.close();
 });
 
@@ -1782,9 +1895,9 @@ test("qayta urinishlar ham o'qimasa, BIRINCHI sabab aytiladi", async () => {
 
   await processBatch(OPERATOR, ["f1"], deps as never);
 
-  // Birinchi so'rov (kadr + tasma) va qayta urinish (hujjat + tasma) —
-  // ikkisi ham o'qimasa, xodimga BIRINCHI urinishning sababi aytiladi
-  assert.equal(calls.f1, 2);
+  // Kadr → hujjat → hujjatning MRZ zonasi. Uchalasi ham o'qimasa,
+  // xodimga BIRINCHI urinishning aniq sababi aytiladi
+  assert.equal(calls.f1, 3);
   const report = edits.map((e) => e.text).join("\n");
   assert.match(report, /yaqinroqdan/, "birinchi urinishning aniq sababi qolsin");
   assert.equal(store.count(), 0);
@@ -1878,7 +1991,7 @@ test("ID karta o'qilmagan bo'lsa, MRZ'siz rasm xato bo'lib qoladi", async () => 
 // o'qilmas bo'lib qoladi — hujjatga kesganda ham kichik qolaveradi.
 // Oxirgi urinishda faqat MRZ zonasi kesib yuboriladi.
 
-test("qayta urinishda hujjat va uning tasmasi yuboriladi", async () => {
+test("qayta urinishlar: hujjat, keyin uning MRZ zonasi", async () => {
   const { encode, decode } = await import("jpeg-js");
   const mrz = td3({
     surname: "TASMAYEV", given: "BOBUR", docNumber: "FB1212121",
@@ -1909,35 +2022,45 @@ test("qayta urinishda hujjat va uning tasmasi yuboriladi", async () => {
     box: { x0: 150, y0: 200, x1: 850, y1: 900 },
   };
 
-  const { deps, store, calls, images, edits } = makeDeps(
-    // 1-so'rov: butun kadr + tasma — o'qilmadi
-    // 2-so'rov: hujjatga kesilgan + uning tasmasi — o'qildi
-    { f1: [fail, okResult(mrz)] },
+  const { deps, store, calls, images, edits, models } = makeDeps(
+    // 1: butun kadr — o'qilmadi
+    // 2: hujjatga kesilgan — ham o'qilmadi
+    // 3: hujjatning MRZ zonasi — o'qildi
+    { f1: [fail, fail, okResult(mrz)] },
     source,
   );
 
-  await processBatch(OPERATOR, ["f1"], deps as never);
+  const before = process.env.FALLBACK_MODEL;
+  process.env.FALLBACK_MODEL = "kuchli-model";
+  try {
+    await processBatch(OPERATOR, ["f1"], deps as never);
+  } finally {
+    if (before === undefined) delete process.env.FALLBACK_MODEL;
+    else process.env.FALLBACK_MODEL = before;
+  }
 
-  assert.equal(calls.f1, 2, "ikkita so'rov: kadr va hujjat");
-  assert.equal(store.count(), 1, "qayta urinishda o'qilgani saqlansin");
+  assert.deepEqual(
+    models,
+    [null, null, "kuchli-model"],
+    "kuchliroq model faqat oxirgi urinishda — unga faqat muammoli rasm tushadi",
+  );
+
+  assert.equal(calls.f1, 3, "kadr → hujjat → MRZ zonasi");
+  assert.equal(store.count(), 1, "uchinchi urinishda o'qilgani saqlansin");
   assert.equal(store.all()[0].surname, "TASMAYEV");
 
-  // Har so'rovda ikkita rasm: ko'rinish va MRZ zonasi
-  assert.equal(images[0].length, 2);
-  assert.equal(images[1].length, 2);
-
-  const kadr = decode(images[0][0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
-  const hujjat = decode(images[1][0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
-  assert.ok(
-    hujjat.width < kadr.width,
-    `ikkinchi so'rovda hujjatga kesilsin: ${kadr.width} → ${hujjat.width}`,
-  );
-  const hujjatTasma = decode(images[1][1].bytes as Uint8Array<ArrayBuffer>, {
-    useTArray: true,
+  // Har so'rovda bitta rasm, lekin har safar yaqinroq
+  const sizes = images.map((group) => {
+    assert.equal(group.length, 1, "har so'rovda bitta rasm");
+    return decode(group[0].bytes as Uint8Array<ArrayBuffer>, { useTArray: true });
   });
   assert.ok(
-    hujjatTasma.height < hujjat.height * 0.7,
-    `tasma hujjatning pastki qismi bo'lsin: ${hujjat.height} → ${hujjatTasma.height}`,
+    sizes[1].width < sizes[0].width,
+    `ikkinchi so'rov hujjatga kesilsin: ${sizes[0].width} → ${sizes[1].width}`,
+  );
+  assert.ok(
+    sizes[2].height < sizes[1].height * 0.7 && sizes[2].width / sizes[2].height > 1.5,
+    `uchinchisi MRZ tasmasi bo'lsin: ${sizes[2].width}x${sizes[2].height}`,
   );
 
   assert.match(edits.map((e) => e.text).join("\n"), /yaqindan qayta o'qildi/);
@@ -1968,6 +2091,7 @@ test("yonboshlagan rasmda tasma olinmaydi — MRZ pastda bo'lmaydi", async () =>
   // Burilgan rasm: model 90 daraja deb aytgan bo'lsa, MRZ yon tomonda
   await processBatch(OPERATOR, ["f1"], deps as never);
   assert.ok(calls.f1 <= 3, `ortiqcha so'rov bo'lmasin: ${calls.f1}`);
+  deps.store.close();
 });
 
 // ───────────────────── Profil va statistika ─────────────────────

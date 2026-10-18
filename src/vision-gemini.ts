@@ -23,9 +23,8 @@ import {
   interpret,
   normalizeMime,
   type ReadResult,
-  type ReadHint,
 } from "./read-shared.ts";
-import type { Image } from "./read.ts";
+import type { Image, ReadOptions } from "./read.ts";
 
 /**
  * Klient kerak bo'lganda yaratiladi — modul yuklanganda kalit talab
@@ -39,13 +38,14 @@ function getClient(): GoogleGenAI {
 export async function readWithGemini(
   image: Image | Image[],
   today = new Date(),
-  hint?: ReadHint,
+  options: ReadOptions = {},
 ): Promise<ReadResult> {
   const images = Array.isArray(image) ? image : [image];
+  const { hint, model = config.geminiModel } = options;
   let text: string;
   try {
     const response = await getClient().models.generateContent({
-      model: config.geminiModel,
+      model,
       contents: [
         {
           role: "user",
@@ -57,7 +57,7 @@ export async function readWithGemini(
                 data: Buffer.from(img.bytes).toString("base64"),
               },
             })),
-            { text: promptFor(hint, images.length) },
+            { text: promptFor(hint) },
           ],
         },
       ],

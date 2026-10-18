@@ -21,9 +21,8 @@ import {
   promptFor,
   interpret,
   normalizeMime,
-  type ReadHint,
 } from "./read-shared.ts";
-import type { Image } from "./read.ts";
+import type { Image, ReadOptions } from "./read.ts";
 import type { ReadResult } from "./read-shared.ts";
 
 // Eski import yo'llari buzilmasligi uchun qayta eksport qilinadi
@@ -42,13 +41,14 @@ function getClient(): Anthropic {
 export async function readDocument(
   image: Image | Image[],
   today = new Date(),
-  hint?: ReadHint,
+  options: ReadOptions = {},
 ): Promise<ReadResult> {
   const images = Array.isArray(image) ? image : [image];
+  const { hint, model = config.model } = options;
   let response: Anthropic.Message;
   try {
     response = await getClient().messages.create({
-      model: config.model,
+      model,
       max_tokens: 2048,
       system: SYSTEM,
       messages: [
@@ -64,7 +64,7 @@ export async function readDocument(
                 data: Buffer.from(img.bytes).toString("base64"),
               },
             })),
-            { type: "text" as const, text: promptFor(hint, images.length) },
+            { type: "text" as const, text: promptFor(hint) },
           ],
         },
       ],
