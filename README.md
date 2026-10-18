@@ -767,7 +767,7 @@ Tekshirish:
 
 ```bash
 npm test         # 338 test — bo'laklar alohida
-npm run sinov    # 48 tekshiruv — botning O'ZI ishga tushiriladi
+npm run sinov    # 49 tekshiruv — botning O'ZI ishga tushiriladi
 npm run typecheck
 ```
 
